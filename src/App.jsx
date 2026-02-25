@@ -1,3 +1,4 @@
+import { fetchSheetData, submitPricingToSheet, fetchPricingStore } from "./sheetsApi";
 import { useState } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -396,6 +397,21 @@ const submitPricing = (pricingStore, setPricingStore, warrantyId, baseFee, psfFe
   entry.baseFee.push({ amount: baseFee, submittedAt: now, status: baseStatus });
   entry.psfFee.push({ amount: psfFee, submittedAt: now, status: psfStatus });
   setPricingStore(newStore);
+    // --- Sync to Google Sheet ---
+    const warranty = WARRANTY_DB.find(w => w.id === warrantyId);
+    if (warranty) {
+      submitPricingToSheet({
+        manufacturer: warranty.manufacturer,
+        product: warranty.name,
+        warrantyTerm: warranty.term,
+        regionState: "",
+        sqFtCost: psfFee,
+        totalProjectCost: baseFee,
+        projectSizeSqft: "",
+        submittedBy: "App User",
+        notes: "Submitted via Warranty Analyzer"
+      }).catch(err => console.warn("[SheetsSync] Could not sync to sheet:", err));
+    }
   return baseStatus === "active" && psfStatus === "active" ? "accepted" : "flagged";
 };
 
