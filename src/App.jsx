@@ -1,5 +1,5 @@
 import { fetchSheetData, submitPricingToSheet, fetchPricingStore } from "./sheetsApi";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
    ROOF WARRANTY MANAGEMENT APP — Roof MRI Branded
@@ -843,6 +843,20 @@ function Accounts({ onSelectRoof }) {
 }
 
 function Warranties({ selectedRoof, setSelectedRoof }) {
+  const [pricingStore, setPricingStore] = useState({});
+  const [pricingLoading, setPricingLoading] = useState(false);
+
+  // Fetch pricing data from Google Sheets on mount
+  useEffect(() => {
+    setPricingLoading(true);
+    fetchPricingStore().then(data => {
+      if (data && Object.keys(data).length > 0) {
+        setPricingStore(data);
+      }
+      setPricingLoading(false);
+    }).catch(() => setPricingLoading(false));
+  }, []);
+
   const roofs = allRoofs();
   if (selectedRoof) {
     const r = findRoof(selectedRoof);
@@ -872,6 +886,53 @@ function Warranties({ selectedRoof, setSelectedRoof }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: "#b45309", fontFamily: F.head, marginBottom: 8 }}>Requirements</div>
         {w.requirements.map((r2,i) => <div key={i} style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 6 }}>{Ic.alert} {r2}</div>)}
       </Card>
+            {/* ---- Pricing Intelligence Section ---- */}
+            <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.green}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 8 }}>Pricing Intelligence</div>
+              {pricingLoading ? (
+                <div style={{ fontSize: 13, color: C.g400 }}>Loading pricing data...</div>
+              ) : (() => {
+                const summary = getPricingSummary(pricingStore, w.id);
+                return summary && summary.submissions > 0 ? (
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>BASE FEE</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.baseFee || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>PSF RATE</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.psfFee || 0).toFixed(2)}/sqft</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>SUBMISSIONS</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{summary.submissions}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body }}>No pricing data yet for this warranty.</div>
+                );
+              })()}
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.head, marginBottom: 8 }}>Submit Pricing</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <input id="baseFeeInput" type="number" placeholder="Base Fee ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 120 }} />
+                  <input id="psfInput" type="number" placeholder="PSF ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 100 }} />
+                  <button onClick={() => {
+                    const baseEl = document.getElementById("baseFeeInput");
+                    const psfEl = document.getElementById("psfInput");
+                    const baseFee = parseFloat(baseEl?.value) || 0;
+                    const psFee = parseFloat(psfEl?.value) || 0;
+                    if (baseFee > 0 || psFee > 0) {
+                      submitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
+                      if (baseEl) baseEl.value = "";
+                      if (psfEl) psfEl.value = "";
+                    }
+                  }} style={{ padding: "6px 14px", background: C.green, color: C.white, border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer" }}>
+                    Submit
+                  </button>
+                </div>
+              </div>
+            </Card>
     </div>;
   }
   return <div>
