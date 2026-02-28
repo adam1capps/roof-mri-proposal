@@ -328,6 +328,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
         <p style="margin:0 0 10px;color:#666;font-size:12px">${w.name}</p>
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Rating</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.rating}/10</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>NDL</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.ndl?"Yes":"No"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Labor Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.laborCovered?"Yes":"No"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Material Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.materialCovered?"Yes":"No"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Consequential Damages</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.consequential?"Yes":"No"}</td></tr>
@@ -335,10 +336,15 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Transferable</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.transferable?"Yes":"No"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Ponding Excluded</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.pondingExcluded?"Yes":"No"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Wind Limit</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.windLimit||"Standard"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Hail Coverage</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.hailCoverage||"Standard"}</td></tr>
+          ${w.thickness?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Thickness</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+w.thickness+'</td></tr>':''}
+          ${w.installationMethod?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Install Method</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+w.installationMethod+'</td></tr>':''}
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspection Freq</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspFreq||"N/A"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspected By</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspBy||"N/A"}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Membranes</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${(w.membranes||[]).join(", ")}</td></tr>
           <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Category</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.category}</td></tr>
+          ${w.recoverEligible!=null?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Re-cover Eligible</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+(w.recoverEligible?"Yes":"No")+'</td></tr>':''}
+          ${w.warrantyFeePerSq?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Warranty Fee</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">$'+w.warrantyFeePerSq+'/sq</td></tr>':''}
         </table>
         ${(w.strengths||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#388e3c;font-size:12px">Strengths</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.strengths.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
         ${(w.weaknesses||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#d32f2f;font-size:12px">Weaknesses</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.weaknesses.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
@@ -369,7 +375,9 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           ["Consequential", w.consequential, false],
           ["Transferable", w.transferable, false],
           ["Ponding Excluded", w.pondingExcluded, true],
-        ].map(([label, val, invert]) => (
+          ["NDL", w.ndl, false],
+          ["Re-cover Eligible", w.recoverEligible, false],
+        ].filter(([, val]) => val !== null && val !== undefined).map(([label, val, invert]) => (
           <div key={label} style={{ fontSize: 11, fontFamily: F.body, color: C.g600 }}>
             <span>{(invert ? !val : val) ? "✅" : "❌"}</span> {label}
           </div>
@@ -383,7 +391,12 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           ["Inspected By", w.inspBy || "N/A"],
           ["Category", w.category],
           ["Membranes", (w.membranes || []).join(", ")],
-        ].map(([label, val]) => (
+          ["Thickness", w.thickness],
+          ["Install Method", w.installationMethod],
+          ["Hail Coverage", w.hailCoverage],
+          ["Warranty Fee", w.warrantyFeePerSq ? `$${w.warrantyFeePerSq}/sq` : null],
+          ["Product Lines", w.productLines],
+        ].filter(([, val]) => val).map(([label, val]) => (
           <div key={label}>
             <div style={{ fontSize: 10, fontWeight: 700, color: C.g400, fontFamily: F.head, textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
             <div style={{ fontSize: 12, color: C.navy, fontFamily: F.body }}>{val}</div>
@@ -403,6 +416,8 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
         </div>
       )}
       {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic", marginTop: 4 }}>Best for: {w.bestFor}</div>}
+      {w.notes && <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body, marginTop: 6 }}>Note: {w.notes}</div>}
+      {w.referenceUrl && <a href={w.referenceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, fontFamily: F.body, marginTop: 4, display: "inline-block" }}>Manufacturer website →</a>}
     </div>
   );
 
@@ -594,6 +609,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                       { label: "Manufacturer", fn: w => w.manufacturer },
                       { label: "Term", fn: w => w.term + " years" },
                       { label: "Rating", fn: w => w.rating + "/10" },
+                      { label: "NDL", fn: w => w.ndl ? "✅ Yes" : "❌ No" },
                       { label: "Labor Covered", fn: w => w.laborCovered ? "✅" : "❌" },
                       { label: "Material Covered", fn: w => w.materialCovered ? "✅" : "❌" },
                       { label: "Consequential", fn: w => w.consequential ? "✅" : "❌" },
@@ -601,9 +617,14 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                       { label: "Transferable", fn: w => w.transferable ? "✅" : "❌" },
                       { label: "Ponding Excluded", fn: w => w.pondingExcluded ? "⚠️ Yes" : "✅ No" },
                       { label: "Wind Limit", fn: w => w.windLimit || "Standard" },
+                      { label: "Hail Coverage", fn: w => w.hailCoverage || "Standard" },
+                      { label: "Thickness", fn: w => w.thickness || "N/A" },
+                      { label: "Install Method", fn: w => w.installationMethod || "N/A" },
                       { label: "Inspection Freq", fn: w => w.inspFreq || "N/A" },
                       { label: "Inspected By", fn: w => w.inspBy || "N/A" },
                       { label: "Membranes", fn: w => (w.membranes || []).join(", ") },
+                      { label: "Re-cover Eligible", fn: w => w.recoverEligible ? "✅ Yes" : w.recoverEligible === false ? "❌ No" : "N/A" },
+                      { label: "Warranty Fee", fn: w => w.warrantyFeePerSq ? `$${w.warrantyFeePerSq}/sq` : "N/A" },
                       { label: "Best For", fn: w => w.bestFor || "N/A" },
                     ].map((row, i) => (
                       <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.g50 }}>
@@ -706,6 +727,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: expandedId === w.id ? 0 : 10 }}>
+                  {w.ndl && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>NDL</span>}
                   {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Labor ✓</span>}
                   {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Material ✓</span>}
                   {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Transferable</span>}
@@ -741,6 +763,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+          {w.ndl && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: F.body }}>NDL</span>}
           {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Labor</span>}
           {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Material</span>}
           {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Transferable</span>}
