@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS roof_warranties (
   requirements JSONB DEFAULT '[]'
 );
 
--- Warranty Database (the 37 warranty options)
+-- Warranty Database (223 warranty options — coatings + single-ply)
 CREATE TABLE IF NOT EXISTS warranty_db (
   id TEXT PRIMARY KEY,
   category TEXT,
@@ -76,7 +76,22 @@ CREATE TABLE IF NOT EXISTS warranty_db (
   strengths JSONB DEFAULT '[]',
   weaknesses JSONB DEFAULT '[]',
   best_for TEXT,
-  rating INTEGER
+  rating INTEGER,
+  product_lines TEXT,
+  warranty_name TEXT,
+  thickness TEXT,
+  installation_method TEXT,
+  ndl BOOLEAN DEFAULT false,
+  hail_coverage TEXT,
+  min_roof_size TEXT,
+  recover_eligible BOOLEAN,
+  recover_max_years INTEGER,
+  warranty_fee_per_sq NUMERIC(10,2),
+  min_warranty_fee NUMERIC(10,2),
+  reference_url TEXT,
+  notes TEXT,
+  maintenance_required TEXT,
+  transfer_policy TEXT
 );
 
 -- Pricing Submissions (replaces Google Sheets)
