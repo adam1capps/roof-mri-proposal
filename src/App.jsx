@@ -219,10 +219,15 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   const [savedSpecs, setSavedSpecs] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_saved") || "[]"); } catch { return []; } });
   const [aiInsights, setAiInsights] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_insights") || '{"helpful":{},"queries":[]}'); } catch { return { helpful: {}, queries: [] }; } });
   const [aiTyping, setAiTyping] = useState(false);
+  const [expandedAiCards, setExpandedAiCards] = useState({});
+  const [showAllResults, setShowAllResults] = useState({});
 
   if (!open) return null;
 
-  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); setAiMessages([]); setAiInput(""); setAiViewMode("concise"); setShowSaved(false); setAiTyping(false); };
+  const toggleAiCard = (wId) => setExpandedAiCards(prev => ({ ...prev, [wId]: !prev[wId] }));
+  const toggleShowAll = (msgId) => setShowAllResults(prev => ({ ...prev, [msgId]: !prev[msgId] }));
+
+  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); setAiMessages([]); setAiInput(""); setAiViewMode("concise"); setShowSaved(false); setAiTyping(false); setExpandedAiCards({}); setShowAllResults({}); };
 
   const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
 
@@ -262,7 +267,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
       if (hb !== ha) return hb - ha;
       return b.rating - a.rating;
     });
-    return pool.slice(0, 6);
+    return pool;
   };
 
   const generateAiResponse = (text, matches, intent) => {
@@ -276,6 +281,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
     parts.push(memStr);
     if (termStr) parts.push(termStr + " term");
     intro += " " + parts.join(" · ") + ".";
+    if (matches.length > 5) intro += ` Showing top 5 of ${matches.length}.`;
     const helpful = aiInsights.helpful || {};
     const anyHelpful = matches.some(w => (helpful[w.id] || 0) >= 1);
     if (anyHelpful) intro += " Results include warranties other contractors have found helpful.";
@@ -756,11 +762,16 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
     const msgContainerRef = { current: null };
     const helpful = aiInsights.helpful || {};
 
-    const ConciseCard = ({ w, msgId }) => (
-      <div style={{ border: `1.5px solid ${C.g200}`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, background: C.white }}>
+    const ConciseCard = ({ w, msgId }) => {
+      const isExp = expandedAiCards[w.id];
+      return (
+      <div style={{ border: `1.5px solid ${isExp ? C.green : C.g200}`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, background: C.white, transition: "border-color .2s" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term}yr</span>
-          <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+          <span onClick={() => toggleAiCard(w.id)} style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, cursor: "pointer", borderBottom: "1px dashed " + C.g300 }} title="Click to expand">{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term}yr</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span onClick={() => toggleAiCard(w.id)} style={{ fontSize: 11, color: C.g400, fontFamily: F.body, cursor: "pointer" }}>{isExp ? "See Less" : "See More"}</span>
+            <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+          </div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
           {w.ndl && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: F.body }}>NDL</span>}
@@ -771,12 +782,14 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           {(helpful[w.id] || 0) >= 1 && <span style={{ background: "#fce4ec", color: "#c62828", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Contractor Favorite</span>}
         </div>
         {w.bestFor && <div style={{ fontSize: 11, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+        {isExp && <WarrantyExpand w={w} />}
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, true); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Helpful">👍</button>
           <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, false); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Not helpful">👎</button>
         </div>
       </div>
     );
+    };
 
     const ExpandedCard = ({ w, msgId }) => (
       <div style={{ border: `1.5px solid ${C.g200}`, borderRadius: 10, padding: "12px 16px", marginBottom: 8, background: C.white }}>
@@ -890,19 +903,32 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                         </div>
                         <div style={{ background: C.g50, padding: "12px 16px", borderRadius: "4px 14px 14px 14px", maxWidth: "90%", fontSize: 13, fontFamily: F.body, lineHeight: 1.5, color: C.navy }}>
                           <div style={{ marginBottom: (msg.warranties || []).length > 0 ? 10 : 0 }}>{msg.text}</div>
-                          {(msg.warranties || []).length > 0 && (
+                          {(msg.warranties || []).length > 0 && (() => {
+                            const all = msg.warranties;
+                            const isShowingAll = showAllResults[msg.id];
+                            const visible = isShowingAll ? all : all.slice(0, 5);
+                            const remaining = all.length - 5;
+                            return (
                             <>
-                              {(msg.warranties).map(w => (
+                              {visible.map(w => (
                                 aiViewMode === "concise"
                                   ? <ConciseCard key={w.id} w={w} msgId={msg.id} />
                                   : <ExpandedCard key={w.id} w={w} msgId={msg.id} />
                               ))}
+                              {remaining > 0 && (
+                                <button onClick={() => toggleShowAll(msg.id)} style={{ width: "100%", padding: "8px 0", marginBottom: 6, background: C.g50, border: `1.5px dashed ${C.g300}`, borderRadius: 8, color: C.navy, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer", transition: "all .15s" }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.color = C.green; }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.color = C.navy; }}>
+                                  {isShowingAll ? "Show Top 5 Only" : `Show All Results (${remaining} more)`}
+                                </button>
+                              )}
                               <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                                 <button onClick={() => saveSpecFromMsg(msg)} style={{ background: C.green, color: C.white, border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Save These Specs</button>
                                 <button onClick={() => downloadSpecPdf(msg.warranties, msg.text.slice(0, 60))} style={{ background: C.white, color: C.navy, border: `1px solid ${C.g200}`, borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Download PDF</button>
                               </div>
                             </>
-                          )}
+                            );
+                          })()}
                           {/* Show feedback status */}
                           {msg.ratings && Object.keys(msg.ratings).length > 0 && (
                             <div style={{ marginTop: 6, fontSize: 10, color: C.g400, fontFamily: F.body }}>
