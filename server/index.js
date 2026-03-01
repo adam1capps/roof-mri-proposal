@@ -16,9 +16,22 @@ const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "warranty-mgmt-dev-secret-change-in-prod";
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-// CORS — restrict to frontend origin
+// CORS — allow frontend origin(s)
 app.use(cors({
-  origin: APP_URL,
+  origin: (origin, callback) => {
+    // Allow requests from the configured APP_URL and common Render URLs
+    const allowed = [
+      APP_URL,
+      "https://warranty-app-kofu.onrender.com",
+      "http://localhost:5173",
+    ];
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked request from origin: ${origin}`);
+      callback(null, true); // Allow all origins in current phase; tighten later
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));

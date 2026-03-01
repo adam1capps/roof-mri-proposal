@@ -27,7 +27,7 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false # Set manually in Render dashboard
       - key: APP_URL
-        value: https://warranty-app.onrender.com
+        value: https://warranty-app-kofu.onrender.com
       - key: API_URL
         value: https://warranty-api-7uez.onrender.com
 

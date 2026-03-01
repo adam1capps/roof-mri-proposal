@@ -1,4 +1,4 @@
-import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData } from "./api";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData, requestPasswordReset, resetPassword, convertToExamples } from "./api";
 import { useState, useEffect, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -976,17 +976,22 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
 
 const COMPANY_TYPES = ["Commercial Roofing", "Product Manufacturing", "Consulting", "Architect", "GC", "Other"];
 
-function AuthScreen({ onAuth, oauthError: initialOauthError }) {
-  const [mode, setMode] = useState("signup"); // "signup" | "login"
+function AuthScreen({ onAuth, oauthError: initialOauthError, initialResetToken }) {
+  const [mode, setMode] = useState(initialResetToken ? "reset" : "signup"); // "signup" | "login" | "forgot" | "reset"
   const [step, setStep] = useState(0); // 0=credentials, 1=profile, 2=phone verify
   const [error, setError] = useState(initialOauthError || "");
   const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [resetToken, setResetToken] = useState(initialResetToken || "");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   // Form fields
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [companyType, setCompanyType] = useState("");
@@ -997,7 +1002,7 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
   const [phoneVerified, setPhoneVerified] = useState(false);
 
   const resetForm = () => {
-    setFirstName(""); setLastName(""); setEmail(""); setPassword("");
+    setFirstName(""); setLastName(""); setEmail(""); setPassword(""); setConfirmPassword("");
     setPhone(""); setCompanyName(""); setCompanyType(""); setJobTitle("");
     setPhoneCode(""); setUserId(null); setCodeSent(false); setPhoneVerified(false);
     setStep(0); setError("");
@@ -1007,6 +1012,7 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
     setError("");
     if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
       const res = await register({ firstName, lastName, email, password, phone, companyName, companyType, jobTitle });
@@ -1032,6 +1038,37 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
       const res = await login({ email, password });
       localStorage.setItem("auth_token", res.token);
       onAuth(res.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError(""); setSuccessMsg("");
+    if (!email) { setError("Please enter your email address"); return; }
+    setLoading(true);
+    try {
+      await requestPasswordReset(email);
+      setSuccessMsg("If an account exists with this email, a password reset link has been sent. Check your inbox.");
+    } catch (err) {
+      setSuccessMsg("If an account exists with this email, a password reset link has been sent. Check your inbox.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setError(""); setSuccessMsg("");
+    if (!newPassword) { setError("Please enter a new password"); return; }
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (newPassword !== confirmNewPassword) { setError("Passwords do not match"); return; }
+    setLoading(true);
+    try {
+      await resetPassword(resetToken, newPassword);
+      setSuccessMsg("Your password has been reset successfully. You can now sign in.");
+      setTimeout(() => { setMode("login"); setSuccessMsg(""); setNewPassword(""); setConfirmNewPassword(""); }, 2000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1246,6 +1283,69 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
     );
   }
 
+  // ── FORGOT PASSWORD SCREEN ──
+  if (mode === "forgot") {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Reset Your Password</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Enter your email address and we'll send you a reset link</p>
+          </div>
+
+          <FormField label="Email" value={email} onChange={setEmail} placeholder="john@company.com" type="email" required />
+
+          {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+          {successMsg && <div style={{ background: C.greenLt, border: `1px solid ${C.green}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.greenDk }}>{successMsg}</div>}
+
+          <button onClick={handleForgotPassword} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: email ? C.green : C.g200, border: "none",
+            color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Sending..." : "Send Reset Link"}</button>
+
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: C.g600 }}>
+            <button onClick={() => { setError(""); setSuccessMsg(""); setMode("login"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Back to Sign In</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RESET PASSWORD SCREEN ──
+  if (mode === "reset") {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Set New Password</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Enter your new password below</p>
+          </div>
+
+          <FormField label="New Password" value={newPassword} onChange={setNewPassword} placeholder="Minimum 8 characters" type="password" required />
+          <FormField label="Confirm New Password" value={confirmNewPassword} onChange={setConfirmNewPassword} placeholder="Re-enter your new password" type="password" required />
+
+          {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+          {successMsg && <div style={{ background: C.greenLt, border: `1px solid ${C.green}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.greenDk }}>{successMsg}</div>}
+
+          <button onClick={handleResetPassword} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (newPassword.length >= 8 && newPassword === confirmNewPassword) ? C.green : C.g200, border: "none",
+            color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Resetting..." : "Reset Password"}</button>
+        </div>
+      </div>
+    );
+  }
+
   // ── MAIN SCREEN: SIGNUP / LOGIN ──
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
@@ -1298,6 +1398,15 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
 
         <FormField label="Email" value={email} onChange={setEmail} placeholder="john@company.com" type="email" required />
         <FormField label="Password" value={password} onChange={setPassword} placeholder={mode === "signup" ? "Minimum 8 characters" : "Your password"} type="password" required />
+        {mode === "signup" && (
+          <FormField label="Confirm Password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter your password" type="password" required />
+        )}
+
+        {mode === "login" && (
+          <div style={{ textAlign: "right", marginBottom: 12, marginTop: -8 }}>
+            <button onClick={() => setMode("forgot")} style={{ background: "none", border: "none", color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F.body }}>Forgot Password?</button>
+          </div>
+        )}
 
         {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
 
@@ -1306,13 +1415,14 @@ function AuthScreen({ onAuth, oauthError: initialOauthError }) {
           <button onClick={() => {
             if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
             if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+            if (password !== confirmPassword) { setError("Passwords do not match"); return; }
             setError("");
             setStep(1);
           }} style={{
             width: "100%", padding: "12px 16px", borderRadius: 10,
-            background: (firstName && lastName && email && password.length >= 8) ? C.green : C.g200,
+            background: (firstName && lastName && email && password.length >= 8 && password === confirmPassword) ? C.green : C.g200,
             border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
-            cursor: (firstName && lastName && email && password.length >= 8) ? "pointer" : "default",
+            cursor: (firstName && lastName && email && password.length >= 8 && password === confirmPassword) ? "pointer" : "default",
           }}>Continue</button>
         ) : (
           <button onClick={handleLogin} disabled={loading} style={{
@@ -1937,6 +2047,162 @@ function ClaimsTab({ CLAIMS, OWNERS, onAdd }) {
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  GUIDED TOUR — Interactive walkthrough for first-time users
+// ══════════════════════════════════════════════════════════════════════
+
+const TOUR_STEPS = [
+  {
+    title: "Welcome to Roof MRI Warranty Manager",
+    description: "This platform helps you manage commercial roof warranties, track inspections, file claims, and protect your roofing investments. Let's take a quick tour to get you started!",
+    position: "center",
+    icon: Ic.shield,
+  },
+  {
+    title: "Accounts Tab",
+    description: "This is your client database. Here you'll manage building owners, their properties, and individual roof sections. Each roof can have warranties, inspections, and claims attached to it. Click '+ Add Owner' to start building your portfolio.",
+    targetTab: "accounts",
+    position: "below-tabs",
+    icon: Ic.building,
+  },
+  {
+    title: "Warranties Tab",
+    description: "Browse and compare over 200+ manufacturer warranties from top brands like GAF, Carlisle, Sika Sarnafil, and more. Select a roof from your accounts to see its active warranties, coverage details, and expiration timelines.",
+    targetTab: "warranties",
+    position: "below-tabs",
+    icon: Ic.shield,
+  },
+  {
+    title: "Access Log",
+    description: "Track every time someone accesses a roof. Log contractor visits, inspections, emergency access, and unauthorized entries. This creates an audit trail that's essential for warranty compliance.",
+    targetTab: "access",
+    position: "below-tabs",
+    icon: Ic.qr,
+  },
+  {
+    title: "Invoices",
+    description: "Upload and manage roofing invoices. Flag invoices that may affect warranty coverage, track payments, and keep a complete financial record tied to each property and roof section.",
+    targetTab: "invoices",
+    position: "below-tabs",
+    icon: Ic.dollar,
+  },
+  {
+    title: "Inspections",
+    description: "Schedule and track required warranty inspections. Many manufacturer warranties require periodic inspections to stay valid. This tab helps you never miss a deadline and keeps your warranties active.",
+    targetTab: "inspections",
+    position: "below-tabs",
+    icon: Ic.cal,
+  },
+  {
+    title: "Claims",
+    description: "File and track warranty claims with manufacturers. Follow the full lifecycle from filing to resolution, with timeline tracking for every event. See exactly how much you've recovered for your clients.",
+    targetTab: "claims",
+    position: "below-tabs",
+    icon: Ic.file,
+  },
+  {
+    title: "Warranty Analyzer",
+    description: "The green button in the bottom-right corner opens the Warranty Analyzer — a powerful tool that lets you compare warranties side-by-side, get AI-powered recommendations, and find the best coverage for any roof type.",
+    position: "bottom-right",
+    icon: Ic.zap,
+  },
+  {
+    title: "Placeholder Data",
+    description: "We've loaded sample data so you can see the platform in action. When you're ready to start with your own clients, use the yellow banner to clear the placeholder data — or keep it as reference examples.",
+    position: "center",
+    icon: Ic.layers,
+  },
+  {
+    title: "You're All Set!",
+    description: "You're ready to start managing warranties like a pro. If you ever need to see this tour again, click the '?' help button in the top navigation bar. Happy managing!",
+    position: "center",
+    icon: Ic.check,
+  },
+];
+
+function GuidedTour({ open, onClose, onTabChange }) {
+  const [step, setStep] = useState(0);
+  const total = TOUR_STEPS.length;
+  const current = TOUR_STEPS[step];
+
+  useEffect(() => {
+    if (open && current.targetTab && onTabChange) {
+      onTabChange(current.targetTab);
+    }
+  }, [step, open]);
+
+  if (!open) return null;
+
+  const next = () => { if (step < total - 1) setStep(step + 1); else onClose(); };
+  const prev = () => { if (step > 0) setStep(step - 1); };
+  const skip = () => { onClose(); };
+
+  // Position the tooltip based on step type
+  const getTooltipStyle = () => {
+    const base = {
+      background: C.white, borderRadius: 20, padding: "32px 28px", maxWidth: 480, width: "90vw",
+      boxShadow: "0 20px 60px rgba(30,44,85,0.25)", position: "relative", zIndex: 10001,
+      animation: "tourFadeIn 0.3s ease",
+    };
+    if (current.position === "center") {
+      return { ...base, margin: "auto" };
+    }
+    if (current.position === "below-tabs") {
+      return { ...base, margin: "0 auto", marginTop: 120 };
+    }
+    if (current.position === "bottom-right") {
+      return { ...base, position: "fixed", bottom: 90, right: 24, zIndex: 10001, margin: 0 };
+    }
+    return base;
+  };
+
+  return (
+    <>
+      <style>{`
+        @keyframes tourFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes tourPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0,189,112,0.4); } 50% { box-shadow: 0 0 0 12px rgba(0,189,112,0); } }
+      `}</style>
+      <div onClick={skip} style={{ position: "fixed", inset: 0, background: "rgba(30,44,85,0.65)", zIndex: 10000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: current.position === "center" ? "20vh" : 0 }}>
+        <div onClick={e => e.stopPropagation()} style={getTooltipStyle()}>
+          {/* Step icon */}
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: `linear-gradient(135deg, ${C.green}, ${C.greenDk})`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, color: C.white, animation: "tourPulse 2s infinite" }}>
+            {current.icon}
+          </div>
+
+          {/* Step indicator */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+            {TOUR_STEPS.map((_, i) => (
+              <div key={i} style={{ width: i === step ? 24 : 8, height: 4, borderRadius: 2, background: i === step ? C.green : i < step ? C.greenLt : C.g200, transition: "all 0.3s ease" }} />
+            ))}
+          </div>
+
+          {/* Content */}
+          <h3 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 8px" }}>{current.title}</h3>
+          <p style={{ fontSize: 14, color: C.g600, fontFamily: F.body, lineHeight: 1.7, margin: "0 0 24px" }}>{current.description}</p>
+
+          {/* Navigation */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={skip} style={{ background: "none", border: "none", color: C.g400, fontSize: 13, cursor: "pointer", fontFamily: F.body, fontWeight: 500 }}>Skip Tour</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {step > 0 && (
+                <button onClick={prev} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 13, fontWeight: 600, fontFamily: F.head, color: C.navy, cursor: "pointer" }}>Back</button>
+              )}
+              <button onClick={next} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, color: C.white, cursor: "pointer" }}>
+                {step === total - 1 ? "Get Started" : `Next (${step + 1}/${total})`}
+              </button>
+            </div>
+          </div>
+
+          {/* Step counter */}
+          <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, color: C.g400, fontFamily: F.body }}>
+            Step {step + 1} of {total}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const TABS = [
   { id: "accounts", label: "Accounts", icon: Ic.building },
   { id: "warranties", label: "Warranties", icon: Ic.shield },
@@ -1954,6 +2220,9 @@ export default function App() {
   const [tab, setTab] = useState("accounts");
   const [selectedRoof, setSelectedRoof] = useState(null);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
+
+  // ── Tour State ──
+  const [tourOpen, setTourOpen] = useState(false);
 
   // ── Modal State ──
   const [addOwnerOpen, setAddOwnerOpen] = useState(false);
@@ -1974,18 +2243,28 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [hasDemoData, setHasDemoData] = useState(false);
   const [clearingDemo, setClearingDemo] = useState(false);
+  // Set this to a YouTube/Vimeo embed URL when a walkthrough video is recorded
+  const [videoUrl] = useState(""); // e.g. "https://www.youtube.com/embed/VIDEO_ID"
 
   // Check for existing auth token on mount, or handle OAuth callback
   const [oauthError, setOauthError] = useState("");
+  const [passwordResetToken, setPasswordResetToken] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauthToken = params.get("auth_token");
     const oauthErr = params.get("auth_error");
+    const resetTok = params.get("reset_token");
 
-    // Clean up URL params from OAuth redirect
-    if (oauthToken || oauthErr) {
+    // Clean up URL params from OAuth redirect or password reset
+    if (oauthToken || oauthErr || resetTok) {
       window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    if (resetTok) {
+      setPasswordResetToken(resetTok);
+      setAuthChecked(true);
+      return;
     }
 
     if (oauthErr) {
@@ -2022,7 +2301,13 @@ export default function App() {
     }
   }, []);
 
-  const handleAuth = (userData) => { setUser(userData); };
+  const handleAuth = (userData) => {
+    setUser(userData);
+    // Show tour for first-time users
+    if (!localStorage.getItem("tour_completed")) {
+      setTimeout(() => setTourOpen(true), 800);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
@@ -2038,6 +2323,20 @@ export default function App() {
       await loadAll();
     } catch (err) {
       alert("Failed to clear demo data: " + err.message);
+    } finally {
+      setClearingDemo(false);
+    }
+  };
+
+  const handleConvertToExamples = async () => {
+    if (!window.confirm("This will rename all sample data to clearly labeled examples (e.g. 'Example Property: Riverside Medical Center'). Continue?")) return;
+    setClearingDemo(true);
+    try {
+      await convertToExamples();
+      setHasDemoData(false);
+      await loadAll();
+    } catch (err) {
+      alert("Failed to convert to examples: " + err.message);
     } finally {
       setClearingDemo(false);
     }
@@ -2093,7 +2392,7 @@ export default function App() {
   if (!user) return (
     <>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <AuthScreen onAuth={handleAuth} oauthError={oauthError} />
+      <AuthScreen onAuth={handleAuth} oauthError={oauthError} initialResetToken={passwordResetToken} />
     </>
   );
 
@@ -2114,6 +2413,7 @@ export default function App() {
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
+    <GuidedTour open={tourOpen} onClose={() => { setTourOpen(false); localStorage.setItem("tour_completed", "true"); }} onTabChange={setTab} />
     <AddOwnerModal open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} />
     <FileClaimModal open={fileClaimOpen} onClose={() => setFileClaimOpen(false)} onSaved={refreshClaims} OWNERS={owners} />
     <ScheduleInspectionModal open={scheduleInspOpen} onClose={() => setScheduleInspOpen(false)} onSaved={refreshInspections} OWNERS={owners} />
@@ -2129,19 +2429,55 @@ export default function App() {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{Ic.user} <span>{displayName}</span></div>
+        <button onClick={() => setTourOpen(true)} title="Take a tour" style={{ background: "none", border: `1px solid rgba(255,255,255,0.2)`, borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.6)", fontSize: 13, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>?</button>
         <button onClick={handleLogout} style={{ background: "none", border: `1px solid rgba(255,255,255,0.2)`, borderRadius: 8, padding: "5px 12px", color: "rgba(255,255,255,0.6)", fontSize: 11, fontFamily: F.body, cursor: "pointer" }}>Sign Out</button>
       </div>
     </div>
     <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
-    {hasDemoData && <div style={{ margin: "0 32px", marginTop: 16, padding: "12px 20px", borderRadius: 10, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-      <div style={{ fontSize: 13, color: "#92400E", fontFamily: F.body }}>
-        <strong>Placeholder data loaded.</strong> This sample data shows how the platform works. When you're ready to build your own client database, clear it out.
+    {hasDemoData && <div style={{ margin: "0 32px", marginTop: 16 }}>
+      {/* Welcome banner with demo data options */}
+      <div style={{ padding: "20px 24px", borderRadius: 14, background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, color: C.white, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, fontFamily: F.head, marginBottom: 6 }}>Welcome to Your Warranty Manager</div>
+            <div style={{ fontSize: 13, opacity: 0.8, fontFamily: F.body, lineHeight: 1.6 }}>
+              We've loaded sample data so you can explore the platform. You have three options:
+            </div>
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.green, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.check}</span>
+                <span><strong>Take the Tour</strong> — Learn what each section does</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.blue, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.layers}</span>
+                <span><strong>Keep as Examples</strong> — Convert sample data to labeled examples</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.yellow, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.x}</span>
+                <span><strong>Clear Data</strong> — Start fresh with a blank slate</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button onClick={() => setTourOpen(true)} style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: C.green, color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{Ic.target} Take the Tour</button>
+            <button onClick={handleConvertToExamples} disabled={clearingDemo} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid rgba(255,255,255,0.3)`, background: "transparent", color: C.white, fontSize: 13, fontWeight: 600, fontFamily: F.head, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{Ic.layers} Keep as Examples</button>
+            <button onClick={handleClearDemoData} disabled={clearingDemo} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid rgba(255,255,255,0.2)`, background: "transparent", color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 600, fontFamily: F.head, cursor: clearingDemo ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", opacity: clearingDemo ? 0.6 : 1 }}>{clearingDemo ? "Clearing..." : "Clear All Data"}</button>
+          </div>
+        </div>
       </div>
-      <button onClick={handleClearDemoData} disabled={clearingDemo} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: clearingDemo ? "wait" : "pointer", whiteSpace: "nowrap", opacity: clearingDemo ? 0.6 : 1 }}>
-        {clearingDemo ? "Clearing..." : "Clear Placeholder Data"}
-      </button>
+
+      {/* Video walkthrough section */}
+      {videoUrl && <div style={{ padding: "16px 20px", borderRadius: 12, background: C.white, border: `1.5px solid ${C.g200}`, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ color: C.blue }}>{Ic.target}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Watch: Platform Walkthrough from the Developer</span>
+        </div>
+        <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 10, overflow: "hidden", background: C.g100 }}>
+          <iframe src={videoUrl} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Platform Walkthrough" />
+        </div>
+      </div>}
     </div>}
     <div style={{ padding: "24px 32px" }}>
       {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} onAdd={() => setAddOwnerOpen(true)} />}

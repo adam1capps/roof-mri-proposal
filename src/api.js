@@ -119,6 +119,18 @@ export const getMe = () => request("/auth/me");
 export const updateProfile = (data) =>
   request("/auth/profile", { method: "PUT", body: JSON.stringify(data) });
 
+/** Request a password reset email */
+export const requestPasswordReset = (email) =>
+  request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+
+/** Reset password with token */
+export const resetPassword = (token, newPassword) =>
+  request("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
+
+/** Convert demo data to labeled examples */
+export const convertToExamples = () =>
+  request("/auth/convert-to-examples", { method: "POST" });
+
 /** Check if user has demo/placeholder data */
 export const checkDemoData = () => request("/auth/has-demo-data");
 

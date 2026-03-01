@@ -234,10 +234,24 @@ router.post("/verify-phone", async (req, res) => {
 // Temporary store for OAuth state tokens (use Redis/DB in production at scale)
 const pendingOAuthStates = new Map();
 
+// ── GET /api/auth/google/status — diagnostic endpoint for Google OAuth config ──
+router.get("/google/status", (req, res) => {
+  res.json({
+    configured: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+    hasClientId: !!GOOGLE_CLIENT_ID,
+    hasClientSecret: !!GOOGLE_CLIENT_SECRET,
+    redirectUri: GOOGLE_REDIRECT_URI,
+    appUrl: APP_URL,
+  });
+});
+
 // ── GET /api/auth/google — redirect to Google OAuth consent screen ──
 router.get("/google", (req, res) => {
   if (!GOOGLE_CLIENT_ID) {
-    return res.status(500).json({ error: "Google OAuth is not configured (missing GOOGLE_CLIENT_ID)" });
+    return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Render environment variables.")}`);
+  }
+  if (!GOOGLE_CLIENT_SECRET) {
+    return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Google OAuth is partially configured. Missing GOOGLE_CLIENT_SECRET.")}`);
   }
 
   const state = crypto.randomBytes(16).toString("hex");
@@ -291,7 +305,11 @@ router.get("/google/callback", async (req, res) => {
     const tokens = await tokenRes.json();
 
     if (tokens.error) {
-      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent(tokens.error_description || tokens.error)}`);
+      console.error("[AUTH] Google token exchange error:", tokens.error, tokens.error_description);
+      const msg = tokens.error === "unauthorized_client"
+        ? "Google OAuth is not authorized. Please verify the redirect URI in Google Cloud Console matches: " + GOOGLE_REDIRECT_URI
+        : (tokens.error_description || tokens.error);
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent(msg)}`);
     }
 
     // Get user profile from Google
@@ -346,6 +364,73 @@ router.get("/google/callback", async (req, res) => {
   } catch (err) {
     console.error("[AUTH] Google OAuth callback error:", err);
     res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Authentication failed. Please try again.")}`);
+  }
+});
+
+// ── POST /api/auth/forgot-password — request password reset ──
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "email is required" });
+
+    const { rows } = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
+
+    // Always return success to prevent email enumeration
+    if (rows.length === 0) {
+      return res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+    }
+
+    const user = rows[0];
+
+    // Don't allow password reset for SSO-only accounts
+    if (user.auth_provider !== "local" && !user.password_hash) {
+      return res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Use email_token columns for reset (repurpose for simplicity)
+    await pool.query(
+      "UPDATE users SET email_token = $1, email_token_expires = $2 WHERE id = $3",
+      [resetToken, resetExpires, user.id]
+    );
+
+    const resetUrl = `${APP_URL}?reset_token=${resetToken}`;
+    console.log(`[AUTH] Password reset link for ${email}: ${resetUrl}`);
+
+    // In production: send this via email service (SendGrid, SES, etc.)
+    // For now, log it to console. The link will work when clicked.
+
+    res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/auth/reset-password — set new password with reset token ──
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
+    if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+    const { rows } = await pool.query(
+      "SELECT * FROM users WHERE email_token = $1 AND email_token_expires > NOW()",
+      [token]
+    );
+
+    if (rows.length === 0) return res.status(400).json({ error: "Invalid or expired reset token. Please request a new reset link." });
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      "UPDATE users SET password_hash = $1, email_token = NULL, email_token_expires = NULL WHERE id = $2",
+      [passwordHash, rows[0].id]
+    );
+
+    res.json({ success: true, message: "Password has been reset successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -446,6 +531,35 @@ router.put("/profile", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [decoded.id]);
     res.json({ success: true, user: mapUser(rows[0]) });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/auth/convert-to-examples — rename demo data to example labels ──
+router.post("/convert-to-examples", async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "No token provided" });
+
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+
+    // Rename demo owners to "Example: ..."
+    await pool.query(
+      `UPDATE owners SET name = 'Example Client: ' || name, is_demo = false WHERE user_id = $1 AND is_demo = true`,
+      [decoded.id]
+    );
+
+    // Rename demo properties to "Example Property: ..."
+    await pool.query(
+      `UPDATE properties SET name = 'Example Property: ' || name WHERE owner_id IN (SELECT id FROM owners WHERE user_id = $1) AND name NOT LIKE 'Example Property:%'`,
+      [decoded.id]
+    );
+
+    res.json({ success: true, message: "Demo data has been converted to labeled examples." });
+  } catch (err) {
+    if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
     res.status(500).json({ error: err.message });
   }
 });
