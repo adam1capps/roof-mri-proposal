@@ -79,7 +79,8 @@ router.post("/register", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
     const token = generateToken(rows[0]);
 
-    res.json({ success: true, token, user: mapUser(rows[0]), emailVerifyUrl: verifyUrl });
+    // In production, send verifyUrl via email (SendGrid, SES). Never expose it in the response.
+    res.json({ success: true, token, user: mapUser(rows[0]) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -209,6 +210,9 @@ router.post("/verify-phone", async (req, res) => {
   }
 });
 
+// Temporary store for OAuth state tokens (use Redis/DB in production at scale)
+const pendingOAuthStates = new Map();
+
 // ── GET /api/auth/google — redirect to Google OAuth consent screen ──
 router.get("/google", (req, res) => {
   if (!GOOGLE_CLIENT_ID) {
@@ -216,6 +220,9 @@ router.get("/google", (req, res) => {
   }
 
   const state = crypto.randomBytes(16).toString("hex");
+  // Store state with expiry (10 minutes)
+  pendingOAuthStates.set(state, Date.now() + 10 * 60 * 1000);
+
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: GOOGLE_REDIRECT_URI,
@@ -232,13 +239,20 @@ router.get("/google", (req, res) => {
 // ── GET /api/auth/google/callback — exchange code for profile, issue JWT ──
 router.get("/google/callback", async (req, res) => {
   try {
-    const { code, error: oauthError } = req.query;
+    const { code, state, error: oauthError } = req.query;
 
     if (oauthError) {
       return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent(oauthError)}`);
     }
     if (!code) {
       return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("No authorization code received")}`);
+    }
+
+    // Validate OAuth state parameter to prevent CSRF
+    const stateExpiry = pendingOAuthStates.get(state);
+    pendingOAuthStates.delete(state);
+    if (!state || !stateExpiry || Date.now() > stateExpiry) {
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Invalid or expired OAuth session. Please try again.")}`);
     }
 
     // Exchange code for tokens
@@ -298,12 +312,9 @@ router.get("/google/callback", async (req, res) => {
     }
 
     const token = generateToken(user);
-    const mappedUser = mapUser(user);
 
-    // Redirect back to the frontend with the JWT token AND user data
-    // so the frontend doesn't need a second API call to getMe()
-    const userParam = encodeURIComponent(JSON.stringify(mappedUser));
-    res.redirect(`${APP_URL}?auth_token=${token}&auth_user=${userParam}`);
+    // Redirect back to the frontend with the JWT token
+    res.redirect(`${APP_URL}?auth_token=${token}`);
   } catch (err) {
     console.error("[AUTH] Google OAuth callback error:", err);
     res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Authentication failed. Please try again.")}`);

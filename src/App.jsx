@@ -1994,31 +1994,16 @@ export default function App() {
 
     if (oauthToken) {
       localStorage.setItem("auth_token", oauthToken);
-
-      // Use auth_user from redirect URL if available (avoids second API call)
-      const authUserParam = params.get("auth_user");
-      if (authUserParam) {
-        try {
-          const userData = JSON.parse(authUserParam);
-          setUser(userData);
-          setAuthChecked(true);
-          return;
-        } catch (e) {
-          console.warn("[OAuth] Failed to parse auth_user param, falling back to getMe:", e);
-        }
-      }
-
-      // Fallback: call getMe API
       getMe().then(res => { setUser(res.user); setAuthChecked(true); })
         .catch((err) => {
           console.error("[OAuth] getMe failed after Google login:", err);
-          // Last resort: decode the JWT payload directly
+          // Fallback: decode the JWT payload to get basic user info for the UI.
+          // The token is still stored and will be verified server-side on each API call.
           try {
             const payload = JSON.parse(atob(oauthToken.split(".")[1]));
             setUser({ id: payload.id, email: payload.email, firstName: payload.firstName, lastName: payload.lastName });
             setAuthChecked(true);
           } catch (decodeErr) {
-            console.error("[OAuth] JWT decode fallback also failed:", decodeErr);
             localStorage.removeItem("auth_token");
             setOauthError("Login succeeded but failed to load your profile. Please try again.");
             setAuthChecked(true);

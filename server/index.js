@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import jwt from "jsonwebtoken";
 import pool from "./db.js";
 import warrantiesRouter from "./routes/warranties.js";
 import accountsRouter from "./routes/accounts.js";
@@ -12,11 +13,33 @@ import authRouter from "./routes/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const JWT_SECRET = process.env.JWT_SECRET || "warranty-mgmt-dev-secret-change-in-prod";
+const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-app.use(cors());
+// CORS — restrict to frontend origin
+app.use(cors({
+  origin: APP_URL,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 app.use(express.json());
 
-// Health check
+// JWT authentication middleware — protects business routes
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  try {
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+// Health check (public)
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -26,14 +49,16 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-// Routes
-app.use("/api/warranties", warrantiesRouter);
-app.use("/api/accounts", accountsRouter);
-app.use("/api/pricing", pricingRouter);
-app.use("/api/access-logs", accessLogsRouter);
-app.use("/api/invoices", invoicesRouter);
-app.use("/api/inspections", inspectionsRouter);
-app.use("/api/claims", claimsRouter);
+// Auth routes (public — handles its own auth internally)
 app.use("/api/auth", authRouter);
+
+// Protected business routes — require valid JWT
+app.use("/api/warranties", requireAuth, warrantiesRouter);
+app.use("/api/accounts", requireAuth, accountsRouter);
+app.use("/api/pricing", requireAuth, pricingRouter);
+app.use("/api/access-logs", requireAuth, accessLogsRouter);
+app.use("/api/invoices", requireAuth, invoicesRouter);
+app.use("/api/inspections", requireAuth, inspectionsRouter);
+app.use("/api/claims", requireAuth, claimsRouter);
 
 app.listen(PORT, () => console.log(`API server listening on port ${PORT}`));
