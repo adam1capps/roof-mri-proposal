@@ -1816,7 +1816,27 @@ function Accounts({ onSelectRoof, OWNERS, onAdd }) {
   </div>;
 }
 
-function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPricingStore, pricingLoading }) {
+// ── Collapsible Section ──
+function CollapsibleSection({ title, icon, color, borderColor, count, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card style={{ marginBottom: 12, borderLeft: `4px solid ${borderColor || C.g200}`, overflow: "hidden" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+        background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: color || C.navy, fontFamily: F.head }}>{title}</div>
+          {count !== undefined && <span style={{ background: C.g100, borderRadius: 10, padding: "1px 8px", fontSize: 10, fontWeight: 600, color: C.g600, fontFamily: F.body }}>{count}</span>}
+        </div>
+        <span style={{ color: C.g400, transition: "transform 0.2s ease", transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>{Ic.chevD}</span>
+      </button>
+      {open && <div style={{ marginTop: 12 }}>{children}</div>}
+    </Card>
+  );
+}
+
+function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
   const roofs = allRoofs(OWNERS);
   if (selectedRoof) {
     const r = findRoof(OWNERS, selectedRoof);
@@ -1824,75 +1844,212 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
     const w = r.warranty;
     const p = pctUsed(w.start, w.end);
     const days = daysTo(w.nextInsp);
+    const roofClaims = (CLAIMS || []).filter(c => c.roofId === selectedRoof);
+    const activeClaims = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending");
+    const resolvedClaims = roofClaims.filter(c => c.status === "approved" || c.status === "completed" || c.status === "denied");
+    const totalRecovered = roofClaims.filter(c => c.status === "approved").reduce((s, c) => s + (c.amount || 0), 0);
+
     return <div>
       <button onClick={() => setSelectedRoof(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>{r.section}</h2>
       <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 8 }}>{r.propName} · {r.propAddr}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
       <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginBottom: 20 }}>{w.wType}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
+
+      {/* KPI Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
         <KPI label="Warranty Used" value={`${p.toFixed(0)}%`} icon={Ic.clock} color={p > 75 ? C.yellow : C.green} sub={`Expires ${fmtDate(w.end)}`} />
         <KPI label="Next Inspection" value={days > 0 ? `${days} days` : "OVERDUE"} icon={Ic.cal} color={days > 60 ? C.green : days > 0 ? C.yellow : C.red} sub={fmtDate(w.nextInsp)} />
+        <KPI label="Active Claims" value={activeClaims.length} icon={Ic.file} color={activeClaims.length > 0 ? C.yellow : C.green} />
+        <KPI label="Recovered" value={totalRecovered > 0 ? fmtMoney(totalRecovered) : "$0"} icon={Ic.dollar} color={C.green} />
       </div>
-      <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.green}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 8 }}>Coverage</div>
+
+      {/* Collapsible Coverage */}
+      <CollapsibleSection title="Coverage" icon={Ic.check} color={C.green} borderColor={C.green} count={w.coverage.length} defaultOpen={false}>
         {w.coverage.map((c,i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13, color: C.g600, fontFamily: F.body }}><span style={{ color: C.green }}>{Ic.check}</span>{c}</div>)}
-      </Card>
-      <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.red}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.red, fontFamily: F.head, marginBottom: 8 }}>Exclusions</div>
+      </CollapsibleSection>
+
+      {/* Collapsible Exclusions */}
+      <CollapsibleSection title="Exclusions" color={C.red} borderColor={C.red} count={w.exclusions.length} defaultOpen={false}>
         {w.exclusions.map((e,i) => <div key={i} style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 6 }}>✕ {e}</div>)}
-      </Card>
-      <Card style={{ borderLeft: `4px solid ${C.yellow}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#b45309", fontFamily: F.head, marginBottom: 8 }}>Requirements</div>
+      </CollapsibleSection>
+
+      {/* Collapsible Requirements */}
+      <CollapsibleSection title="Requirements" color="#b45309" borderColor={C.yellow} count={w.requirements.length} defaultOpen={false}>
         {w.requirements.map((r2,i) => <div key={i} style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 6 }}>{Ic.alert} {r2}</div>)}
-      </Card>
-            {/* ---- Pricing Intelligence Section ---- */}
-            <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.green}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 8 }}>Pricing Intelligence</div>
-              {pricingLoading ? (
-                <div style={{ fontSize: 13, color: C.g400 }}>Loading pricing data...</div>
-              ) : (() => {
-                const summary = getPricingSummary(pricingStore, w.id);
-                return summary && summary.submissions > 0 ? (
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>BASE FEE</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.baseFee || 0).toLocaleString()}</div>
+      </CollapsibleSection>
+
+      {/* ════════════════════════════════════════════════════════════════
+         WARRANTY CLAIMS — Linked to this specific roof
+         ════════════════════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 8, marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${C.blue}, #1d4ed8)`, display: "flex", alignItems: "center", justifyContent: "center", color: C.white }}>{Ic.file}</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.navy, fontFamily: F.head }}>Warranty Claims</div>
+              <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{roofClaims.length} claim{roofClaims.length !== 1 ? "s" : ""} filed against this warranty</div>
+            </div>
+          </div>
+        </div>
+
+        {roofClaims.length === 0 ? (
+          <Card style={{ borderLeft: `4px solid ${C.g200}`, textAlign: "center", padding: "32px 20px" }}>
+            <div style={{ color: C.g400, marginBottom: 8 }}>{Ic.shield}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 4 }}>No Claims Filed</div>
+            <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body, marginBottom: 16 }}>This warranty has no claims on record. Claims filed from the Claims tab will appear here.</div>
+          </Card>
+        ) : (
+          <>
+            {/* Active Claims */}
+            {activeClaims.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 8 }}>Active Claims</div>
+                {activeClaims.map(claim => (
+                  <Card key={claim.id} style={{ marginBottom: 10, borderLeft: `4px solid ${C.yellow}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} Claim</div>
+                        <div style={{ fontSize: 12, color: C.g400, marginTop: 2, fontFamily: F.body }}>{claim.desc}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                        <Badge status={claim.status} />
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>PSF RATE</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.psfFee || 0).toFixed(2)}/sqft</div>
+
+                    {/* Claim location placeholder — future Google Earth integration */}
+                    <div style={{ background: C.g50, borderRadius: 10, padding: "14px 16px", marginBottom: 10, border: `1px dashed ${C.g200}` }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ color: C.blue }}>{Ic.target}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Leak Location</span>
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, background: C.blueBg, color: C.blue, fontWeight: 600, fontFamily: F.body }}>Coming Soon</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, lineHeight: 1.5 }}>
+                        Google Earth roof overview with pin-drop leak location, timestamped entries, and photo evidence will be available here.
+                      </div>
                     </div>
+
+                    {/* AI Analysis placeholder */}
+                    <div style={{ background: `linear-gradient(135deg, ${C.purpleBg}, #ede9fe)`, borderRadius: 10, padding: "14px 16px", marginBottom: 10, border: `1px solid #ddd6fe` }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ color: C.purple }}>{Ic.zap}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.purple, fontFamily: F.head }}>AI Warranty Analysis</span>
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, background: "#ede9fe", color: C.purple, fontWeight: 600, fontFamily: F.body }}>Coming Soon</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#6d28d9", fontFamily: F.body, lineHeight: 1.5 }}>
+                        AI photo analysis will evaluate roof damage, assess repair quality, and determine whether the work should be covered under this warranty.
+                      </div>
+                    </div>
+
+                    {/* Timeline */}
+                    {claim.timeline && claim.timeline.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 8 }}>Timeline</div>
+                        <div style={{ paddingLeft: 20, borderLeft: `2px solid ${C.g200}` }}>
+                          {claim.timeline.map((e, i) => (
+                            <div key={i} style={{ position: "relative", paddingBottom: i < claim.timeline.length - 1 ? 12 : 0 }}>
+                              <div style={{ position: "absolute", left: -25, top: 4, width: 10, height: 10, borderRadius: 5, background: i === claim.timeline.length - 1 ? C.green : C.white, border: `2px solid ${i === claim.timeline.length - 1 ? C.green : C.g200}` }} />
+                              <div style={{ fontSize: 11, color: C.g400, marginBottom: 2 }}>{fmtDate(e.date)}</div>
+                              <div style={{ fontSize: 12, color: C.navy, lineHeight: 1.4 }}>{e.event}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Resolved Claims */}
+            {resolvedClaims.length > 0 && (
+              <CollapsibleSection title="Resolved Claims" color={C.green} borderColor={C.green} count={resolvedClaims.length} defaultOpen={false}>
+                {resolvedClaims.map(claim => (
+                  <div key={claim.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.g100}` }}>
                     <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>SUBMISSIONS</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{summary.submissions}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} — {claim.desc}</div>
+                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body, marginTop: 2 }}>Filed {fmtDate(claim.timeline?.[0]?.date)}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: claim.status === "approved" ? C.green : C.red, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                      <Badge status={claim.status} />
                     </div>
                   </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body }}>No pricing data yet for this warranty.</div>
-                );
-              })()}
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.head, marginBottom: 8 }}>Submit Pricing</div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <input id="baseFeeInput" type="number" placeholder="Base Fee ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 120 }} />
-                  <input id="psfInput" type="number" placeholder="PSF ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 100 }} />
-                  <button onClick={() => {
-                    const baseEl = document.getElementById("baseFeeInput");
-                    const psfEl = document.getElementById("psfInput");
-                    const baseFee = parseFloat(baseEl?.value) || 0;
-                    const psFee = parseFloat(psfEl?.value) || 0;
-                    if (baseFee > 0 || psFee > 0) {
-                      doSubmitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
-                      if (baseEl) baseEl.value = "";
-                      if (psfEl) psfEl.value = "";
-                    }
-                  }} style={{ padding: "6px 14px", background: C.green, color: C.white, border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer" }}>
-                    Submit
-                  </button>
+                ))}
+              </CollapsibleSection>
+            )}
+          </>
+        )}
+
+        {/* Feature roadmap preview */}
+        <Card style={{ marginTop: 16, background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, borderRadius: 14, border: "none" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.white, fontFamily: F.head, marginBottom: 10 }}>Claims Intelligence Roadmap</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              { icon: Ic.target, label: "Google Earth Overlay", desc: "Pin-drop leak locations on satellite view" },
+              { icon: Ic.upload, label: "Photo Evidence", desc: "Upload & timestamp damage photos" },
+              { icon: Ic.zap, label: "AI Damage Analysis", desc: "Auto-assess coverage eligibility" },
+              { icon: Ic.check, label: "Repair Tracking", desc: "Mark leaks as repaired with proof" },
+            ].map((item, i) => (
+              <div key={i} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ color: C.green }}>{item.icon}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.white, fontFamily: F.head }}>{item.label}</span>
                 </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: F.body }}>{item.desc}</div>
               </div>
-            </Card>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* ---- Pricing Intelligence Section ---- */}
+      <CollapsibleSection title="Pricing Intelligence" color={C.green} borderColor={C.green} defaultOpen={false}>
+        {pricingLoading ? (
+          <div style={{ fontSize: 13, color: C.g400 }}>Loading pricing data...</div>
+        ) : (() => {
+          const summary = getPricingSummary(pricingStore, w.id);
+          return summary && summary.submissions > 0 ? (
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>BASE FEE</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.baseFee || 0).toLocaleString()}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>PSF RATE</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.psfFee || 0).toFixed(2)}/sqft</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>SUBMISSIONS</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{summary.submissions}</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body }}>No pricing data yet for this warranty.</div>
+          );
+        })()}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.head, marginBottom: 8 }}>Submit Pricing</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input id="baseFeeInput" type="number" placeholder="Base Fee ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 120 }} />
+            <input id="psfInput" type="number" placeholder="PSF ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 100 }} />
+            <button onClick={() => {
+              const baseEl = document.getElementById("baseFeeInput");
+              const psfEl = document.getElementById("psfInput");
+              const baseFee = parseFloat(baseEl?.value) || 0;
+              const psFee = parseFloat(psfEl?.value) || 0;
+              if (baseFee > 0 || psFee > 0) {
+                doSubmitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
+                if (baseEl) baseEl.value = "";
+                if (psfEl) psfEl.value = "";
+              }
+            }} style={{ padding: "6px 14px", background: C.green, color: C.white, border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer" }}>
+              Submit
+            </button>
+          </div>
+        </div>
+      </CollapsibleSection>
     </div>;
   }
   return <div>
@@ -2481,7 +2638,7 @@ export default function App() {
     </div>}
     <div style={{ padding: "24px 32px" }}>
       {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} onAdd={() => setAddOwnerOpen(true)} />}
-      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} />}
+      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />}
       {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />}
       {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />}
       {tab === "inspections" && <InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />}
