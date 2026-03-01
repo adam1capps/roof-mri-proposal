@@ -1,4 +1,4 @@
-import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice } from "./api";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth } from "./api";
 import { useState, useEffect, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -971,6 +971,374 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+//  AUTH SCREEN — Signup / Login with SSO + Email
+// ══════════════════════════════════════════════════════════════════════
+
+const COMPANY_TYPES = ["Commercial Roofing", "Product Manufacturing", "Consulting", "Architect", "GC", "Other"];
+
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState("signup"); // "signup" | "login"
+  const [step, setStep] = useState(0); // 0=credentials, 1=profile, 2=phone verify
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Form fields
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyType, setCompanyType] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [userId, setUserId] = useState(null);
+  const [codeSent, setCodeSent] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+
+  const resetForm = () => {
+    setFirstName(""); setLastName(""); setEmail(""); setPassword("");
+    setPhone(""); setCompanyName(""); setCompanyType(""); setJobTitle("");
+    setPhoneCode(""); setUserId(null); setCodeSent(false); setPhoneVerified(false);
+    setStep(0); setError("");
+  };
+
+  const handleRegister = async () => {
+    setError("");
+    if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    setLoading(true);
+    try {
+      const res = await register({ firstName, lastName, email, password, phone, companyName, companyType, jobTitle });
+      localStorage.setItem("auth_token", res.token);
+      setUserId(res.user.id);
+      if (phone) {
+        setStep(2); // go to phone verify
+      } else {
+        onAuth(res.user);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    setError("");
+    if (!email || !password) { setError("Please enter email and password"); return; }
+    setLoading(true);
+    try {
+      const res = await login({ email, password });
+      localStorage.setItem("auth_token", res.token);
+      onAuth(res.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSSO = async (provider) => {
+    // In production, this would redirect to OAuth flow
+    // For now, show a message about configuration
+    setError(`${provider} SSO requires OAuth client credentials to be configured. Use email signup for now.`);
+  };
+
+  const handleSendCode = async () => {
+    if (!phone || !userId) return;
+    setLoading(true);
+    try {
+      await sendPhoneCode(userId, phone);
+      setCodeSent(true);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyPhone = async () => {
+    if (!phoneCode || !userId) return;
+    setLoading(true);
+    try {
+      await verifyPhone(userId, phoneCode);
+      setPhoneVerified(true);
+      setError("");
+      // Brief delay then proceed
+      setTimeout(() => {
+        getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId }));
+      }, 1200);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // SSO buttons
+  const SSOButton = ({ provider, icon, label, color }) => (
+    <button onClick={() => handleSSO(provider)} style={{
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+      width: "100%", padding: "12px 16px", borderRadius: 10,
+      border: `1.5px solid ${C.g200}`, background: C.white,
+      fontSize: 14, fontWeight: 600, fontFamily: F.body, color: C.navy,
+      cursor: "pointer", transition: "all 0.15s ease",
+    }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = C.g50; }}
+    onMouseLeave={e => { e.currentTarget.style.borderColor = C.g200; e.currentTarget.style.background = C.white; }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  const googleIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+
+  const linkedInIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#0077B5">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+    </svg>
+  );
+
+  // ── PHONE VERIFICATION STEP ──
+  if (step === 2) {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Verify Your Phone</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>We'll send a 6-digit code to <strong>{phone}</strong></p>
+          </div>
+
+          {phoneVerified ? (
+            <div style={{ textAlign: "center", padding: "24px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.green, fontFamily: F.head }}>Phone Verified!</div>
+              <div style={{ fontSize: 13, color: C.g600, marginTop: 6 }}>Redirecting to your dashboard...</div>
+            </div>
+          ) : !codeSent ? (
+            <div>
+              <FormField label="Cell Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" required />
+              {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+              <button onClick={handleSendCode} disabled={loading || !phone} style={{
+                width: "100%", padding: "12px 16px", borderRadius: 10,
+                background: phone ? C.green : C.g200, border: "none",
+                color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+                cursor: phone ? "pointer" : "default", opacity: loading ? 0.6 : 1,
+              }}>{loading ? "Sending..." : "Send Verification Code"}</button>
+              <button onClick={() => { getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId })); }}
+                style={{ display: "block", width: "100%", background: "none", border: "none", color: C.g400, fontSize: 13, marginTop: 12, cursor: "pointer", fontFamily: F.body }}>
+                Skip for now →
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Verification Code<span style={{ color: C.red }}> *</span></label>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  {[0,1,2,3,4,5].map(i => (
+                    <input key={i} maxLength={1} value={phoneCode[i] || ""}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        if (val) {
+                          const newCode = phoneCode.split("");
+                          newCode[i] = val;
+                          setPhoneCode(newCode.join(""));
+                          // Auto-focus next
+                          const next = e.target.nextElementSibling;
+                          if (next) next.focus();
+                        }
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Backspace" && !phoneCode[i]) {
+                          const prev = e.target.previousElementSibling;
+                          if (prev) prev.focus();
+                        }
+                      }}
+                      style={{
+                        width: 44, height: 52, textAlign: "center", fontSize: 22, fontWeight: 700,
+                        borderRadius: 10, border: `2px solid ${phoneCode[i] ? C.green : C.g200}`,
+                        fontFamily: F.head, color: C.navy, outline: "none",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12, textAlign: "center" }}>{error}</div>}
+              <button onClick={handleVerifyPhone} disabled={loading || phoneCode.length < 6} style={{
+                width: "100%", padding: "12px 16px", borderRadius: 10,
+                background: phoneCode.length === 6 ? C.green : C.g200, border: "none",
+                color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+                cursor: phoneCode.length === 6 ? "pointer" : "default", opacity: loading ? 0.6 : 1,
+              }}>{loading ? "Verifying..." : "Verify Phone"}</button>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <button onClick={handleSendCode} style={{ background: "none", border: "none", color: C.blue, fontSize: 13, cursor: "pointer", fontFamily: F.body }}>Resend code</button>
+                <button onClick={() => { getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId })); }}
+                  style={{ background: "none", border: "none", color: C.g400, fontSize: 13, cursor: "pointer", fontFamily: F.body }}>Skip for now →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── SIGNUP STEP 1: PROFILE INFO ──
+  if (mode === "signup" && step === 1) {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 480, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Complete Your Profile</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Tell us about yourself so we can personalize your experience</p>
+          </div>
+
+          {/* Step indicator */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {["Account", "Profile", "Verify"].map((s, i) => (
+              <div key={s} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.green : C.g200, marginBottom: 4 }} />
+                <span style={{ fontSize: 10, color: i <= step ? C.navy : C.g400, fontFamily: F.body, fontWeight: i === step ? 700 : 400 }}>{s}</span>
+              </div>
+            ))}
+          </div>
+
+          <FormField label="Cell Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" required />
+          <FormField label="Company Name" value={companyName} onChange={setCompanyName} placeholder="e.g. Summit Roofing Co." required />
+          <FormField label="Type of Company" value={companyType} onChange={setCompanyType} required options={COMPANY_TYPES} placeholder="Select company type..." />
+          <FormField label="Job Title" value={jobTitle} onChange={setJobTitle} placeholder="e.g. Project Manager" required />
+
+          {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setStep(0)} style={{
+              flex: 1, padding: "12px 16px", borderRadius: 10,
+              border: `1.5px solid ${C.g200}`, background: C.white,
+              fontSize: 14, fontWeight: 600, fontFamily: F.head, color: C.navy, cursor: "pointer",
+            }}>Back</button>
+            <button onClick={handleRegister} disabled={loading} style={{
+              flex: 2, padding: "12px 16px", borderRadius: 10,
+              background: (firstName && lastName && email && password && phone && companyName && companyType && jobTitle) ? C.green : C.g200,
+              border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+              cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+            }}>{loading ? "Creating Account..." : "Create Account"}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN SCREEN: SIGNUP / LOGIN ──
+  return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+            <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>
+            {mode === "signup" ? "Create Your Account" : "Welcome Back"}
+          </h2>
+          <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>
+            {mode === "signup" ? "Join the Roof MRI Warranty Management Platform" : "Sign in to your Warranty Manager"}
+          </p>
+        </div>
+
+        {/* Step indicator for signup */}
+        {mode === "signup" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {["Account", "Profile", "Verify"].map((s, i) => (
+              <div key={s} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.green : C.g200, marginBottom: 4 }} />
+                <span style={{ fontSize: 10, color: i <= step ? C.navy : C.g400, fontFamily: F.body, fontWeight: i === step ? 700 : 400 }}>{s}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* SSO Buttons */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+          <SSOButton provider="google" icon={googleIcon} label="Continue with Google" color="#4285F4" />
+          <SSOButton provider="linkedin" icon={linkedInIcon} label="Continue with LinkedIn" color="#0077B5" />
+        </div>
+
+        {/* Divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <div style={{ flex: 1, height: 1, background: C.g200 }} />
+          <span style={{ fontSize: 12, color: C.g400, fontFamily: F.body }}>or</span>
+          <div style={{ flex: 1, height: 1, background: C.g200 }} />
+        </div>
+
+        {/* Form Fields */}
+        {mode === "signup" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FormField label="First Name" value={firstName} onChange={setFirstName} placeholder="John" required />
+            <FormField label="Last Name" value={lastName} onChange={setLastName} placeholder="Smith" required />
+          </div>
+        )}
+
+        <FormField label="Email" value={email} onChange={setEmail} placeholder="john@company.com" type="email" required />
+        <FormField label="Password" value={password} onChange={setPassword} placeholder={mode === "signup" ? "Minimum 8 characters" : "Your password"} type="password" required />
+
+        {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+
+        {/* Submit Button */}
+        {mode === "signup" ? (
+          <button onClick={() => {
+            if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
+            if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+            setError("");
+            setStep(1);
+          }} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (firstName && lastName && email && password.length >= 8) ? C.green : C.g200,
+            border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: (firstName && lastName && email && password.length >= 8) ? "pointer" : "default",
+          }}>Continue</button>
+        ) : (
+          <button onClick={handleLogin} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (email && password) ? C.green : C.g200,
+            border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Signing In..." : "Sign In"}</button>
+        )}
+
+        {/* Toggle mode */}
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: C.g600 }}>
+          {mode === "signup" ? (
+            <span>Already have an account? <button onClick={() => { resetForm(); setMode("login"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Sign In</button></span>
+          ) : (
+            <span>Don't have an account? <button onClick={() => { resetForm(); setMode("signup"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Sign Up</button></span>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: C.g400 }}>
+          A verification link will be sent to confirm your email address
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
 //  MANAGEMENT MODALS — Create owners, claims, inspections, logs, invoices
 // ══════════════════════════════════════════════════════════════════════
 
@@ -1576,6 +1944,10 @@ const TABS = [
 ];
 
 export default function App() {
+  // ── Auth State ──
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [tab, setTab] = useState("accounts");
   const [selectedRoof, setSelectedRoof] = useState(null);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
@@ -1598,6 +1970,24 @@ export default function App() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Check for existing auth token on mount
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    if (token) {
+      getMe().then(res => { setUser(res.user); setAuthChecked(true); })
+        .catch(() => { localStorage.removeItem("auth_token"); setAuthChecked(true); });
+    } else {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  const handleAuth = (userData) => { setUser(userData); };
+
+  const handleLogout = () => {
+    localStorage.removeItem("auth_token");
+    setUser(null);
+  };
+
   const loadAll = useCallback(() => {
     return Promise.all([
       fetchAccounts().catch(() => []),
@@ -1619,9 +2009,9 @@ export default function App() {
     });
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
-  // Targeted refresh functions — only re-fetch the data that changed
+  // Targeted refresh functions
   const refreshAccounts = useCallback(() => fetchAccounts().catch(() => []).then(setOwners), []);
   const refreshClaims = useCallback(() => fetchClaims().catch(() => []).then(setClaims), []);
   const refreshInspections = useCallback(() => fetchInspections().catch(() => []).then(setInspections), []);
@@ -1630,6 +2020,27 @@ export default function App() {
 
   const onSelectRoof = (roofId) => { setSelectedRoof(roofId); setTab("warranties"); };
 
+  // ── Auth check loading ──
+  if (!authChecked) return (
+    <div style={{ minHeight: "100vh", background: C.g50, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+        </div>
+        <div style={{ fontSize: 14, color: C.g600, fontFamily: F.body }}>Loading...</div>
+      </div>
+    </div>
+  );
+
+  // ── Show auth screen if not logged in ──
+  if (!user) return (
+    <>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <AuthScreen onAuth={handleAuth} />
+    </>
+  );
+
+  // ── Data loading ──
   if (loading) return (
     <div style={{ minHeight: "100vh", background: C.g50, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
       <div style={{ textAlign: "center" }}>
@@ -1640,6 +2051,8 @@ export default function App() {
       </div>
     </div>
   );
+
+  const displayName = user.companyName || `${user.firstName} ${user.lastName}`;
 
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -1657,7 +2070,10 @@ export default function App() {
         <div><div style={{ fontSize: 14, fontWeight: 800, color: C.white, fontFamily: F.head }}>Warranty Manager</div>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontFamily: F.body }}>Roof MRI Certified Platform</div></div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{Ic.user} <span>Riverland Roofing</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{Ic.user} <span>{displayName}</span></div>
+        <button onClick={handleLogout} style={{ background: "none", border: `1px solid rgba(255,255,255,0.2)`, borderRadius: 8, padding: "5px 12px", color: "rgba(255,255,255,0.6)", fontSize: 11, fontFamily: F.body, cursor: "pointer" }}>Sign Out</button>
+      </div>
     </div>
     <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}

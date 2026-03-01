@@ -5,12 +5,20 @@
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders(), ...options.headers },
     ...options,
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `API ${res.status}: ${res.statusText}`);
+  }
   return res.json();
 }
 
@@ -74,3 +82,39 @@ export const createInvoice = (data) =>
 /** Update an invoice */
 export const updateInvoice = (id, data) =>
   request(`/invoices/${id}`, { method: "PUT", body: JSON.stringify(data) });
+
+// ── Auth API ──
+
+/** Register with email + password */
+export const register = (data) =>
+  request("/auth/register", { method: "POST", body: JSON.stringify(data) });
+
+/** Login with email + password */
+export const login = (data) =>
+  request("/auth/login", { method: "POST", body: JSON.stringify(data) });
+
+/** Verify email with token */
+export const verifyEmail = (token) => request(`/auth/verify-email?token=${token}`);
+
+/** Resend email verification */
+export const resendVerification = (email) =>
+  request("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email }) });
+
+/** Send phone verification code */
+export const sendPhoneCode = (userId, phone) =>
+  request("/auth/send-phone-code", { method: "POST", body: JSON.stringify({ userId, phone }) });
+
+/** Verify phone code */
+export const verifyPhone = (userId, code) =>
+  request("/auth/verify-phone", { method: "POST", body: JSON.stringify({ userId, code }) });
+
+/** SSO login/register */
+export const ssoAuth = (data) =>
+  request("/auth/sso", { method: "POST", body: JSON.stringify(data) });
+
+/** Get current user from token */
+export const getMe = () => request("/auth/me");
+
+/** Update user profile */
+export const updateProfile = (data) =>
+  request("/auth/profile", { method: "PUT", body: JSON.stringify(data) });

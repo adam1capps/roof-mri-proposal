@@ -13,6 +13,29 @@ DROP TABLE IF EXISTS roofs CASCADE;
 DROP TABLE IF EXISTS properties CASCADE;
 DROP TABLE IF EXISTS property_managers CASCADE;
 DROP TABLE IF EXISTS owners CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- Users (authentication & profile)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT,
+  phone TEXT,
+  company_name TEXT,
+  company_type TEXT,
+  job_title TEXT,
+  email_verified BOOLEAN DEFAULT false,
+  email_token TEXT,
+  email_token_expires TIMESTAMPTZ,
+  phone_verified BOOLEAN DEFAULT false,
+  phone_code TEXT,
+  phone_code_expires TIMESTAMPTZ,
+  auth_provider TEXT DEFAULT 'local',
+  provider_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- Owners
 CREATE TABLE IF NOT EXISTS owners (

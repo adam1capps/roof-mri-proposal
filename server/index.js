@@ -8,6 +8,7 @@ import accessLogsRouter from "./routes/accessLogs.js";
 import invoicesRouter from "./routes/invoices.js";
 import inspectionsRouter from "./routes/inspections.js";
 import claimsRouter from "./routes/claims.js";
+import authRouter from "./routes/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -33,5 +34,6 @@ app.use("/api/access-logs", accessLogsRouter);
 app.use("/api/invoices", invoicesRouter);
 app.use("/api/inspections", inspectionsRouter);
 app.use("/api/claims", claimsRouter);
+app.use("/api/auth", authRouter);
 
 app.listen(PORT, () => console.log(`API server listening on port ${PORT}`));
