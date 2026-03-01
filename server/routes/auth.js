@@ -298,9 +298,12 @@ router.get("/google/callback", async (req, res) => {
     }
 
     const token = generateToken(user);
+    const mappedUser = mapUser(user);
 
-    // Redirect back to the frontend with the JWT token
-    res.redirect(`${APP_URL}?auth_token=${token}`);
+    // Redirect back to the frontend with the JWT token AND user data
+    // so the frontend doesn't need a second API call to getMe()
+    const userParam = encodeURIComponent(JSON.stringify(mappedUser));
+    res.redirect(`${APP_URL}?auth_token=${token}&auth_user=${userParam}`);
   } catch (err) {
     console.error("[AUTH] Google OAuth callback error:", err);
     res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Authentication failed. Please try again.")}`);

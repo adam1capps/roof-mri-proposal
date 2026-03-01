@@ -1994,10 +1994,25 @@ export default function App() {
 
     if (oauthToken) {
       localStorage.setItem("auth_token", oauthToken);
+
+      // Use auth_user from redirect URL if available (avoids second API call)
+      const authUserParam = params.get("auth_user");
+      if (authUserParam) {
+        try {
+          const userData = JSON.parse(authUserParam);
+          setUser(userData);
+          setAuthChecked(true);
+          return;
+        } catch (e) {
+          console.warn("[OAuth] Failed to parse auth_user param, falling back to getMe:", e);
+        }
+      }
+
+      // Fallback: call getMe API
       getMe().then(res => { setUser(res.user); setAuthChecked(true); })
         .catch((err) => {
           console.error("[OAuth] getMe failed after Google login:", err);
-          // Fallback: decode the JWT payload directly to get user info
+          // Last resort: decode the JWT payload directly
           try {
             const payload = JSON.parse(atob(oauthToken.split(".")[1]));
             setUser({ id: payload.id, email: payload.email, firstName: payload.firstName, lastName: payload.lastName });
