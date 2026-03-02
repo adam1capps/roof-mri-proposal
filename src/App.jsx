@@ -1,5 +1,6 @@
-import { fetchSheetData, submitPricingToSheet, fetchPricingStore } from "./sheetsApi";
-import { useState, useEffect } from "react";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData, requestPasswordReset, resetPassword, convertToExamples } from "./api";
+import { useState, useEffect, useCallback } from "react";
+import { Routes, Route, useNavigate, useLocation, useParams } from "react-router-dom";
 
 /* ═══════════════════════════════════════════════════════════════════
    ROOF WARRANTY MANAGEMENT APP — Roof MRI Branded
@@ -64,163 +65,16 @@ const pctUsed = (s, e) => {
   const a = new Date(s).getTime(), b = new Date(e).getTime();
   return Math.min(100, Math.max(0, ((Date.now() - a) / (b - a)) * 100));
 };
+const termYears = (s, e) => Math.round((new Date(e) - new Date(s)) / (365.25 * 864e5));
 
-// ── MOCK DATA ──────────────────────────────────────────────────────
-const OWNERS = [
-  {
-    id: "own-1", name: "Vanderbilt Capital Partners",
-    contact: "Richard Vanderbilt III", email: "rvanderbilt@vcpartners.com", phone: "(615) 555-0100",
-    notes: "Owns 12 commercial properties across Middle TN. Long-term hold strategy.",
-    pms: [
-      { id: "pm-1", name: "Cornerstone Property Management", contact: "Sarah Mitchell", email: "smitchell@cornerstonepm.com", phone: "(615) 555-0150", notes: "Manages 6 of VCP's Nashville properties" }
-    ],
-    properties: [
-      {
-        id: "prop-1", name: "Riverside Office Complex", address: "1420 Commerce Blvd, Nashville, TN", managedBy: "pm-1",
-        roofs: [
-          { id: "r-1a", section: "Main Building — Flat", sqFt: 22000, type: "TPO", installed: "2019-06-15",
-            warranty: { manufacturer: "GAF", wType: "NDL (No Dollar Limit)", start: "2019-06-15", end: "2039-06-15", status: "active", compliance: "current", nextInsp: "2026-06-15", lastInsp: "2025-12-10",
-              coverage: ["Membrane material defects", "Manufacturing flaws", "Seam failure", "Flashing defects"],
-              exclusions: ["Foot traffic damage", "Acts of God (wind >74mph)", "Unauthorized modifications", "Ponding water >48hrs"],
-              requirements: ["Biannual inspection by certified contractor", "Maintain drainage systems", "Report damage within 30 days", "No unauthorized penetrations"]
-            }
-          },
-          { id: "r-1b", section: "Warehouse Wing", sqFt: 35000, type: "EPDM", installed: "2017-03-20",
-            warranty: { manufacturer: "Carlisle", wType: "Material Only", start: "2017-03-20", end: "2032-03-20", status: "active", compliance: "at-risk", nextInsp: "2026-03-20", lastInsp: "2024-09-15",
-              coverage: ["Membrane material defects", "Adhesive failure"],
-              exclusions: ["Workmanship", "Foot traffic damage", "Chemical exposure", "Ponding water"],
-              requirements: ["Annual inspection", "Maintain all flashings", "Professional repairs only"]
-            }
-          }
-        ]
-      },
-      {
-        id: "prop-2", name: "Commerce Park Building A", address: "2200 West End Ave, Nashville, TN", managedBy: "pm-1",
-        roofs: [
-          { id: "r-2a", section: "Full Roof", sqFt: 18000, type: "TPO", installed: "2021-04-10",
-            warranty: { manufacturer: "GAF", wType: "NDL (No Dollar Limit)", start: "2021-04-10", end: "2041-04-10", status: "active", compliance: "current", nextInsp: "2026-10-10", lastInsp: "2025-10-08",
-              coverage: ["Material defects", "Manufacturing flaws", "Membrane failure"],
-              exclusions: ["Foot traffic", "Acts of God", "Unauthorized modifications"],
-              requirements: ["Biannual inspection", "Maintain drainage", "30-day damage reporting"]
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "own-2", name: "Greenway Health Systems",
-    contact: "Dr. Marcia Langford", email: "mlangford@greenwayhealthsys.com", phone: "(615) 555-0300",
-    notes: "Healthcare REIT. Extremely sensitive to leaks — medical equipment and patient safety.",
-    pms: [],
-    properties: [
-      {
-        id: "prop-3", name: "Greenway Medical Center", address: "800 Medical Center Dr, Franklin, TN",
-        roofs: [
-          { id: "r-3a", section: "East Wing", sqFt: 45000, type: "PVC", installed: "2020-09-01",
-            warranty: { manufacturer: "Sika Sarnafil", wType: "Full System", start: "2020-09-01", end: "2040-09-01", status: "active", compliance: "current", nextInsp: "2026-09-01", lastInsp: "2025-08-20",
-              coverage: ["Full system warranty", "Material and labor", "Consequential damages up to $500K"],
-              exclusions: ["Acts of God", "Third-party damage", "Unauthorized modifications"],
-              requirements: ["Annual manufacturer inspection", "Maintain rooftop equipment pads", "Quarterly drain cleaning"]
-            }
-          },
-          { id: "r-3b", section: "West Wing", sqFt: 38000, type: "TPO", installed: "2018-11-15",
-            warranty: { manufacturer: "Versico", wType: "Material + Labor", start: "2018-11-15", end: "2033-11-15", status: "active", compliance: "at-risk", nextInsp: "2026-05-15", lastInsp: "2024-11-20",
-              coverage: ["Membrane defects", "Seam failure", "Labor for warranty repairs"],
-              exclusions: ["Ponding water", "Foot traffic", "HVAC damage"],
-              requirements: ["Biannual inspection", "No rooftop storage", "Report leaks within 14 days"]
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "own-3", name: "Summit Retail Holdings",
-    contact: "James Thornton", email: "jthornton@summitretail.com", phone: "(615) 555-0400",
-    notes: "Strip mall portfolio. Price-sensitive, but understands warranty value after losing coverage on Cool Springs location.",
-    pms: [
-      { id: "pm-2", name: "Alliance Facility Services", contact: "Mike Rodriguez", email: "mrodriguez@alliancefs.com", phone: "(615) 555-0450", notes: "Handles all maintenance for Summit's retail portfolio" }
-    ],
-    properties: [
-      {
-        id: "prop-4", name: "Harding Pike Shopping Center", address: "4500 Harding Pike, Nashville, TN", managedBy: "pm-2",
-        roofs: [
-          { id: "r-4a", section: "Main Retail Strip", sqFt: 52000, type: "Modified Bitumen", installed: "2015-08-10",
-            warranty: { manufacturer: "Firestone", wType: "Material Only", start: "2015-08-10", end: "2030-08-10", status: "active", compliance: "expired-inspection", nextInsp: "2025-08-10", lastInsp: "2023-08-15",
-              coverage: ["Membrane material defects only"],
-              exclusions: ["All workmanship", "Ponding", "Foot traffic", "HVAC discharge"],
-              requirements: ["Annual certified inspection", "Professional repairs within 30 days of discovery"]
-            }
-          }
-        ]
-      },
-      {
-        id: "prop-5", name: "Nolensville Road Plaza", address: "3200 Nolensville Rd, Nashville, TN", managedBy: "pm-2",
-        roofs: [
-          { id: "r-5a", section: "Full Roof", sqFt: 28000, type: "TPO", installed: "2022-03-15",
-            warranty: { manufacturer: "GAF", wType: "NDL", start: "2022-03-15", end: "2042-03-15", status: "active", compliance: "current", nextInsp: "2026-09-15", lastInsp: "2025-09-10",
-              coverage: ["Full membrane coverage", "Manufacturing defects", "Seam integrity"],
-              exclusions: ["Foot traffic", "Unauthorized penetrations", "Wind >74mph"],
-              requirements: ["Biannual inspection", "Maintain drainage", "30-day reporting"]
-            }
-          }
-        ]
-      }
-    ]
-  }
-];
-const ACCESS_LOGS = [
-  { id: "al-1", roofId: "r-1a", person: "Mike Torres", company: "Nashville HVAC Pro", purpose: "HVAC unit service", date: "2025-12-08T09:30:00", duration: "2.5 hrs", notes: "Routine condenser service. Used ladder at NE access." },
-  { id: "al-2", roofId: "r-1a", person: "Unknown", company: "Unknown", purpose: "Unauthorized access", date: "2025-12-12T14:15:00", duration: "Unknown", notes: "QR not scanned. Camera showed individual on roof near HVAC unit." },
-  { id: "al-3", roofId: "r-1a", person: "Billy Hargrove", company: "Riverland Roofing", purpose: "MRI moisture scan", date: "2025-12-18T08:00:00", duration: "3 hrs", notes: "Full scan completed. Puncture found near NE HVAC unit." },
-  { id: "al-4", roofId: "r-3a", person: "David Kim", company: "Greenway Facilities", purpose: "Drain inspection", date: "2026-01-05T10:00:00", duration: "45 min", notes: "Quarterly drain cleaning per warranty requirements." },
-  { id: "al-5", roofId: "r-4a", person: "Jeff Simmons", company: "Pinnacle Signs", purpose: "Sign installation", date: "2025-11-20T13:00:00", duration: "4 hrs", notes: "New tenant signage. Penetrations made without contractor notification." },
-  { id: "al-6", roofId: "r-1b", person: "Sarah Mitchell", company: "Cornerstone PM", purpose: "Annual walkthrough", date: "2026-01-15T11:00:00", duration: "1 hr", notes: "PM inspection. Noted ponding near drain #3." },
-];
-
-const INVOICES = [
-  { id: "inv-1", roofId: "r-1a", vendor: "Riverland Roofing", date: "2025-12-20", amount: 4200, desc: "Seam repair — NE section near HVAC", flagged: true, flagReason: "Seam separation may be covered under GAF NDL warranty", status: "review" },
-  { id: "inv-2", roofId: "r-1b", vendor: "Acme Roofing", date: "2025-10-15", amount: 1800, desc: "Flashing repair — west parapet", flagged: false, status: "paid" },
-  { id: "inv-3", roofId: "r-3b", vendor: "Quality Roof Repair", date: "2025-09-22", amount: 6500, desc: "Membrane patch — 200 sqft area", flagged: true, flagReason: "Membrane defect may fall under Versico Material + Labor coverage", status: "review" },
-  { id: "inv-4", roofId: "r-4a", vendor: "Pinnacle Roofing", date: "2025-11-30", amount: 3200, desc: "Emergency leak repair — tenant space", flagged: true, flagReason: "Leak may be linked to unauthorized sign penetration — third-party liability, not warranty", status: "review" },
-  { id: "inv-5", roofId: "r-5a", vendor: "Riverland Roofing", date: "2026-01-10", amount: 950, desc: "Drain basket replacement x3", flagged: false, status: "paid" },
-  { id: "inv-6", roofId: "r-3a", vendor: "Sika Sarnafil Direct", date: "2025-07-18", amount: 0, desc: "Warranty repair — manufacturer dispatched crew", flagged: false, status: "warranty" },
-];
-
-const INSPECTIONS = [
-  { id: "insp-1", roofId: "r-1a", date: "2025-12-10", inspector: "Billy Hargrove", company: "Riverland Roofing", type: "Biannual + MRI Scan", status: "completed", score: 87, photos: 24, moistureData: true, notes: "Puncture found near NE HVAC. Seam wear on south section. Drains clear." },
-  { id: "insp-2", roofId: "r-3a", date: "2025-08-20", inspector: "Adam G.", company: "Roof MRI", type: "Annual + MRI Scan", status: "completed", score: 94, photos: 18, moistureData: true, notes: "Excellent condition. All drains clear. No moisture detected." },
-  { id: "insp-3", roofId: "r-1a", date: "2026-06-15", inspector: "TBD", company: "TBD", type: "Biannual", status: "scheduled", score: null, photos: 0, moistureData: false, notes: "Due per GAF NDL requirements." },
-  { id: "insp-4", roofId: "r-4a", date: "2025-08-10", inspector: "—", company: "—", type: "Annual", status: "overdue", score: null, photos: 0, moistureData: false, notes: "OVERDUE. Last inspection Aug 2023. Warranty compliance at risk." },
-  { id: "insp-5", roofId: "r-1b", date: "2026-03-20", inspector: "TBD", company: "TBD", type: "Annual", status: "scheduled", score: null, photos: 0, moistureData: false, notes: "Carlisle requires annual inspection." },
-];
-
-const CLAIMS = [
-  { id: "cl-1", roofId: "r-3b", manufacturer: "Versico", filed: "2025-10-01", amount: 3200, status: "approved", desc: "Membrane delamination — 200 sqft area, west section",
-    timeline: [
-      { date: "2025-10-01", event: "Claim filed with Versico. Included MRI scan data, photos, and inspection report." },
-      { date: "2025-10-08", event: "Versico acknowledged receipt. Assigned claim #VER-2025-4412." },
-      { date: "2025-10-22", event: "Versico field rep inspected. Confirmed manufacturing defect in membrane batch." },
-      { date: "2025-11-05", event: "Claim approved. $3,200 repair authorized under Material + Labor warranty." },
-      { date: "2025-11-18", event: "Repair completed by Versico-authorized contractor." },
-    ]
-  },
-  { id: "cl-2", roofId: "r-1a", manufacturer: "GAF", filed: "2026-01-10", amount: 4200, status: "in-progress", desc: "Seam separation near HVAC unit — potential third-party cause",
-    timeline: [
-      { date: "2026-01-10", event: "Claim filed with GAF. Included MRI scan showing moisture at seam, QR access log showing unauthorized roof access 12/12." },
-      { date: "2026-01-15", event: "GAF acknowledged. Requested additional documentation on HVAC contractor visits." },
-      { date: "2026-01-28", event: "Submitted HVAC service records and QR access log timeline. Awaiting field inspection." },
-    ]
-  },
-];
+// (Data is now fetched from the API — see api.js)
 // ── HELPERS ─────────────────────────────────────────────────────────
-const allRoofs = () => {
+const allRoofs = (owners) => {
   const out = [];
-  OWNERS.forEach(o => o.properties.forEach(p => p.roofs.forEach(r => out.push({ ...r, propName: p.name, propAddr: p.address, ownerName: o.name }))));
+  (owners || []).forEach(o => o.properties.forEach(p => p.roofs.forEach(r => out.push({ ...r, propName: p.name, propAddr: p.address, ownerName: o.name }))));
   return out;
 };
-const findRoof = (id) => allRoofs().find(r => r.id === id);
+const findRoof = (owners, id) => allRoofs(owners).find(r => r.id === id);
 
 // ── BADGE ──────────────────────────────────────────────────────────
 const badgeStyles = {
@@ -282,7 +136,7 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
     {options ? (
       <select value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none" }}>
         <option value="">{placeholder || "Select..."}</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => typeof o === "object" ? <option key={o.value} value={o.value}>{o.label}</option> : <option key={o} value={o}>{o}</option>)}
       </select>
     ) : (
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box" }} />
@@ -299,46 +153,7 @@ const CORP_TIER = {
   "KARNAK": 2, "Everest Systems": 2, "FAR (Fluid Applied Roofing)": 2,
 };
 
-// ── CROWDSOURCED WARRANTY PRICING ─────────────────────────────────
-const initPricingStore = () => {
-  const seed = {
-    "w-gaf-ndl": { baseFee: [
-      { amount: 2500, submittedAt: "2025-11-01T00:00:00Z", status: "active" },
-      { amount: 2800, submittedAt: "2025-12-15T00:00:00Z", status: "active" },
-      { amount: 2650, submittedAt: "2026-01-20T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.08, submittedAt: "2025-11-01T00:00:00Z", status: "active" },
-      { amount: 0.09, submittedAt: "2025-12-15T00:00:00Z", status: "active" },
-      { amount: 0.085, submittedAt: "2026-01-20T00:00:00Z", status: "active" },
-    ]},
-    "c-gaco-sil-lm": { baseFee: [
-      { amount: 1800, submittedAt: "2025-10-10T00:00:00Z", status: "active" },
-      { amount: 2100, submittedAt: "2025-11-22T00:00:00Z", status: "active" },
-      { amount: 1950, submittedAt: "2026-01-05T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.06, submittedAt: "2025-10-10T00:00:00Z", status: "active" },
-      { amount: 0.07, submittedAt: "2025-11-22T00:00:00Z", status: "active" },
-      { amount: 0.065, submittedAt: "2026-01-05T00:00:00Z", status: "active" },
-    ]},
-    "c-henry-sil-gs": { baseFee: [
-      { amount: 2200, submittedAt: "2025-12-01T00:00:00Z", status: "active" },
-      { amount: 2400, submittedAt: "2026-01-10T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.07, submittedAt: "2025-12-01T00:00:00Z", status: "active" },
-      { amount: 0.075, submittedAt: "2026-01-10T00:00:00Z", status: "active" },
-    ]},
-    "w-sika-fs": { baseFee: [
-      { amount: 4500, submittedAt: "2025-09-15T00:00:00Z", status: "active" },
-      { amount: 5000, submittedAt: "2025-11-10T00:00:00Z", status: "active" },
-      { amount: 4800, submittedAt: "2026-02-01T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.14, submittedAt: "2025-09-15T00:00:00Z", status: "active" },
-      { amount: 0.15, submittedAt: "2025-11-10T00:00:00Z", status: "active" },
-      { amount: 0.145, submittedAt: "2026-02-01T00:00:00Z", status: "active" },
-    ]},
-  };
-  return seed;
-};
+// (Pricing data is now fetched from the API)
 
 const getMedian = (arr) => {
   if (!arr || arr.length === 0) return null;
@@ -360,107 +175,26 @@ const getPricingSummary = (pricingStore, warrantyId) => {
     sufficient: count >= 3,
   };
 };
-const submitPricing = (pricingStore, setPricingStore, warrantyId, baseFee, psfFee) => {
+const doSubmitPricing = async (pricingStore, setPricingStore, warrantyId, baseFee, psfFee) => {
   const now = new Date().toISOString();
+  // Optimistic local update
   const newStore = { ...pricingStore };
   if (!newStore[warrantyId]) newStore[warrantyId] = { baseFee: [], psfFee: [] };
-  const entry = newStore[warrantyId];
-  const activeBase = entry.baseFee.filter(s => s.status === "active");
-  const activePsf = entry.psfFee.filter(s => s.status === "active");
-  let baseStatus = "active";
-  let psfStatus = "active";
-  if (activeBase.length >= 3) {
-    const med = getMedian(activeBase.map(s => s.amount));
-    if (Math.abs(baseFee - med) / med > 0.45) baseStatus = "pending";
-  }
-  if (activePsf.length >= 3) {
-    const med = getMedian(activePsf.map(s => s.amount));
-    if (Math.abs(psfFee - med) / med > 0.45) psfStatus = "pending";
-  }
-  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-  entry.baseFee.forEach(s => {
-    if (s.status === "pending" && s.submittedAt > sixtyDaysAgo) {
-      if (baseStatus === "active" && Math.abs(s.amount - baseFee) / Math.max(s.amount, baseFee) < 0.25) {
-        s.status = "active";
-      }
-    }
-  });
-  entry.psfFee.forEach(s => {
-    if (s.status === "pending" && s.submittedAt > sixtyDaysAgo) {
-      if (psfStatus === "active" && Math.abs(s.amount - psfFee) / Math.max(s.amount, psfFee) < 0.25) {
-        s.status = "active";
-      }
-    }
-  });
-  entry.baseFee = entry.baseFee.filter(s => s.status === "active" || s.submittedAt > sixtyDaysAgo);
-  entry.psfFee = entry.psfFee.filter(s => s.status === "active" || s.submittedAt > sixtyDaysAgo);
-  entry.baseFee.push({ amount: baseFee, submittedAt: now, status: baseStatus });
-  entry.psfFee.push({ amount: psfFee, submittedAt: now, status: psfStatus });
+  if (baseFee > 0) newStore[warrantyId].baseFee.push({ amount: baseFee, submittedAt: now, status: "active" });
+  if (psfFee > 0) newStore[warrantyId].psfFee.push({ amount: psfFee, submittedAt: now, status: "active" });
   setPricingStore(newStore);
-    // --- Sync to Google Sheet ---
-    const warranty = WARRANTY_DB.find(w => w.id === warrantyId);
-    if (warranty) {
-      submitPricingToSheet({
-        manufacturer: warranty.manufacturer,
-        product: warranty.name,
-        warrantyTerm: warranty.term,
-        regionState: "",
-        sqFtCost: psfFee,
-        totalProjectCost: baseFee,
-        projectSizeSqft: "",
-        submittedBy: "App User",
-        notes: "Submitted via Warranty Analyzer"
-      }).catch(err => console.warn("[SheetsSync] Could not sync to sheet:", err));
-    }
-  return baseStatus === "active" && psfStatus === "active" ? "accepted" : "flagged";
+  // Persist to API
+  submitPricingApi({ warrantyId, baseFee, psfFee }).catch(err => console.warn("[API] Pricing submit error:", err));
 };
 
-// ── WARRANTY OPTIONS DATABASE ──────────────────────────────────────
-const WARRANTY_DB = [
-  { id: "w-gaf-ndl", category: "Single-Ply", manufacturer: "GAF", name: "NDL (No Dollar Limit)", membranes: ["TPO", "PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "None", inspFreq: "Biannual", inspBy: "GAF-certified contractor", transferable: true, pondingExcluded: true, windLimit: "74 mph", strengths: ["No dollar cap on repairs", "Longest coverage in TPO market", "Transferable to new owner"], weaknesses: ["Strict biannual inspection requirement", "Must use GAF-certified contractors", "Ponding water excluded"], bestFor: "Long-term hold properties needing maximum coverage", rating: 9 },
-  { id: "w-gaf-sl", category: "Single-Ply", manufacturer: "GAF", name: "Silver Pledge", membranes: ["TPO", "PVC"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "$50/sqft", inspFreq: "Biannual", inspBy: "GAF-certified contractor", transferable: true, pondingExcluded: true, windLimit: "74 mph", strengths: ["Solid mid-tier coverage", "Labor included", "Transferable"], weaknesses: ["Dollar cap limits exposure", "Same inspection requirements as NDL"], bestFor: "Budget-conscious owners wanting labor coverage", rating: 7 },
-  { id: "w-carlisle-mo", category: "Single-Ply", manufacturer: "Carlisle", name: "Material Only", membranes: ["TPO", "EPDM", "PVC"], term: 15, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Material value only", inspFreq: "Annual", inspBy: "Any licensed contractor", transferable: false, pondingExcluded: true, windLimit: "55 mph", strengths: ["Lower cost warranty", "Flexible inspection requirements", "Wide membrane compatibility"], weaknesses: ["No labor coverage at all", "Not transferable", "Lower wind threshold"], bestFor: "Cost-sensitive projects with reliable contractors", rating: 5 },
-  { id: "w-carlisle-psa", category: "Single-Ply", manufacturer: "Carlisle", name: "Platinum Shield", membranes: ["TPO", "EPDM", "PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: true, dollarCap: "None", inspFreq: "Annual", inspBy: "Carlisle-authorized", transferable: true, pondingExcluded: false, windLimit: "80 mph", strengths: ["Covers consequential damages", "Ponding NOT excluded", "Higher wind threshold", "Transferable"], weaknesses: ["Premium pricing", "Must use Carlisle-authorized contractors only"], bestFor: "High-value properties where leak consequences are severe", rating: 9 },
-  { id: "w-versico-ml", category: "Single-Ply", manufacturer: "Versico", name: "Material + Labor", membranes: ["TPO", "EPDM"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "$40/sqft", inspFreq: "Biannual", inspBy: "Versico-authorized", transferable: true, pondingExcluded: true, windLimit: "60 mph", strengths: ["Good mid-range coverage", "Labor included", "Reasonable dollar cap"], weaknesses: ["Lower wind rating", "Biannual inspections required"], bestFor: "Mid-market properties with standard exposure", rating: 6 },
-  { id: "w-sika-fs", category: "Single-Ply", manufacturer: "Sika Sarnafil", name: "Full System", membranes: ["PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: true, dollarCap: "Up to $500K", inspFreq: "Annual", inspBy: "Manufacturer direct", transferable: true, pondingExcluded: false, windLimit: "90 mph", strengths: ["Consequential damage coverage up to $500K", "Manufacturer-direct inspections", "Highest wind rating", "Ponding not excluded"], weaknesses: ["PVC only", "Premium cost", "Manufacturer controls inspections"], bestFor: "Healthcare, data centers, critical facilities", rating: 10 },
-  { id: "w-firestone-mo", category: "Single-Ply", manufacturer: "Firestone", name: "Material Only", membranes: ["TPO", "EPDM", "Modified Bitumen"], term: 15, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Material value", inspFreq: "Annual", inspBy: "Any licensed", transferable: false, pondingExcluded: true, windLimit: "55 mph", strengths: ["Wide membrane compatibility", "Flexible contractor requirements"], weaknesses: ["No labor", "Not transferable", "Material-only limits real protection"], bestFor: "Basic coverage on budget retrofits", rating: 4 },
-  { id: "c-gaco-sil-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Silicone L&M NDL", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Ponding water NOT excluded (silicone)", "Up to 20-year terms available", "50-yr material-only option unique in industry"], weaknesses: ["Transfer fee + 60-day notice required", "30-day leak notification window", "Disputes governed by TN law"], bestFor: "Ponding-prone roofs needing long-term NDL coating warranty", rating: 9 },
-  { id: "c-gaco-sil-mo", category: "Coating", manufacturer: "GACO (Amrize)", name: "Silicone Material Only 50-yr", membranes: ["Silicone"], term: 50, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product", inspFreq: "Annual", inspBy: "N/A", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["50-year term unique in coating industry", "Ponding NOT excluded", "Low-cost warranty option"], weaknesses: ["No labor coverage", "Material replacement only"], bestFor: "Budget projects wanting longest material guarantee available", rating: 6 },
-  { id: "c-gaco-acr-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Acrylic L&M NDL", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Up to 20-year terms", "Transferable"], weaknesses: ["Ponding water excluded", "Must use GACO licensed applicator"], bestFor: "Well-drained roofs needing acrylic restoration with NDL coverage", rating: 7 },
-  { id: "c-gaco-ure-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Urethane L&M NDL", membranes: ["Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Urethane durability + impact resistance", "Up to 20-year terms"], weaknesses: ["Ponding water excluded", "Must use GACO licensed applicator"], bestFor: "High-traffic roofs needing durable urethane system with NDL", rating: 7 },
-  { id: "c-aws-sil-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Silicone NDL System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual (contractor-performed for 20-yr)", inspBy: "Platinum/Platinum Elite Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["NDL coverage", "Ponding NOT excluded", "Renewable within 30 days of expiration", "StarGard+ extension available"], weaknesses: ["Third-party inspection required", "Must use Platinum-tier contractor", "Transfer requires inspection + approval"], bestFor: "Premium silicone restoration with renewable NDL coverage", rating: 9 },
-  { id: "c-aws-uas-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Ure-A-Sil NDL System", membranes: ["Urethane", "Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual", inspBy: "Platinum/Platinum Elite Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Flagship system combining urethane strength + silicone UV resistance", "NDL coverage", "Ponding NOT excluded (silicone topcoat)"], weaknesses: ["Premium contractor tier required", "Multi-coat application"], bestFor: "Maximum durability with urethane base and silicone topcoat", rating: 9 },
-  { id: "c-aws-acr-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Met-A-Gard Acrylic NDL", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual", inspBy: "Platinum Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Metal roof specific system", "NDL coverage", "Transferable"], weaknesses: ["Ponding water excluded", "Metal roofs only", "Max 15-year term"], bestFor: "Metal roof restoration with acrylic coating", rating: 7 },
-  { id: "c-sw-sil-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Silicone System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Backed by multi-billion dollar Sherwin-Williams", "4,600+ locations nationwide", "Ponding NOT excluded", "Up to 20-year terms"], weaknesses: ["Must use UNIFLEX Authorized Contractor", "Dollar cap not published as NDL"], bestFor: "Owners wanting blue-chip corporate backing on coating warranty", rating: 8 },
-  { id: "c-sw-acr-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Acrylic System", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Sherwin-Williams corporate backing", "Can extend warranty with additional applications", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term for acrylic"], bestFor: "Well-drained roofs with corporate-grade warranty backing", rating: 7 },
-  { id: "c-sw-ure-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Urethane System", membranes: ["Urethane"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Single-component aliphatic moisture curing", "Sherwin-Williams backing", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term"], bestFor: "Urethane restoration backed by major manufacturer", rating: 7 },
-  { id: "c-gaf-sil-lm", category: "Coating", manufacturer: "GAF", name: "Silicone Coating L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "GAF Certified Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Standard Industries backing", "Ponding NOT excluded", "Up to 20-year terms", "High Solid option allows single-coat application"], weaknesses: ["Must use GAF Certified Contractor", "Standard Unisil requires min 2 coats"], bestFor: "Silicone restoration through established GAF contractor network", rating: 8 },
-  { id: "c-gaf-acr-lm", category: "Coating", manufacturer: "GAF", name: "HydroStop Acrylic L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "GAF Certified Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Premium HydroStop system up to 20 years", "GAF/Standard Industries backing", "Transferable"], weaknesses: ["Ponding water excluded", "Standard acrylic limited to 10/15-yr"], bestFor: "Premium acrylic restoration through GAF network", rating: 8 },
-  { id: "c-trop-sil-lm", category: "Coating", manufacturer: "Tropical (SOPREMA)", name: "Eterna-Sil Silicone System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual (Care & Maintenance Specs)", inspBy: "Tropical Authorized Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["SOPREMA Group backing (integrated Jan 2026)", "Can be applied over ponding water", "100% silicone solvent-free", "Title 24 compliant, CRRC rated"], weaknesses: ["Separate warranty application per building", "Must use Tropical Authorized Contractor"], bestFor: "Silicone restoration backed by global SOPREMA group", rating: 8 },
-  { id: "c-trop-acr-lm", category: "Coating", manufacturer: "Tropical (SOPREMA)", name: "Acrylic System", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Tropical Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["SOPREMA Group backing", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term", "Separate warranty per building"], bestFor: "Acrylic restoration with international manufacturer support", rating: 7 },
-  { id: "c-henry-sil-gs", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 988 Gold Seal", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["DPUR patent for dirt resistance", "Rain-safe in 15 min", "50+ mils single coat capability", "Carlisle Companies backing", "Warranty portal available"], weaknesses: ["Must use Henry Authorized Applicator"], bestFor: "Premium silicone with patented dirt-resistance technology", rating: 9 },
-  { id: "c-henry-sil-mp", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 988 Materials-Plus", membranes: ["Silicone"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Materials + labor for affected areas", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Covers materials and labor for affected areas", "Ponding NOT excluded", "Lower cost than Gold Seal"], weaknesses: ["Not full NDL", "Coverage limited to affected areas"], bestFor: "Mid-tier silicone warranty with Henry's DPUR technology", rating: 7 },
-  { id: "c-henry-acr-gs", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 280 Acrylic Gold Seal", membranes: ["Acrylic"], term: 12, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Carlisle Companies backing", "Resists chalking, mildew, fungi", "Warranty portal"], weaknesses: ["Ponding water excluded", "Max 12-year term shorter than competitors"], bestFor: "Acrylic restoration with Carlisle backing where drainage is adequate", rating: 6 },
-  { id: "c-apoc-sil-mo", category: "Coating", manufacturer: "APOC", name: "576 Premium Silicone Lifetime", membranes: ["Silicone"], term: 99, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product (prorated)", inspFreq: "N/A", inspBy: "N/A", transferable: false, pondingExcluded: false, windLimit: "Per terms", strengths: ["Lifetime material warranty unique in market", "Rain-safe in 15 min", "Exceeds ASTM D6694/D7281", "Title 24 and CRRC certified"], weaknesses: ["Material only, no labor", "Prorated replacement", "Not transferable"], bestFor: "Budget projects wanting longest material-only silicone guarantee", rating: 5 },
-  { id: "c-apoc-acr-258", category: "Coating", manufacturer: "APOC", name: "258 Energy-Armor Ultra 20-yr", membranes: ["Acrylic"], term: 20, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product (prorated)", inspFreq: "N/A", inspBy: "N/A", transferable: false, pondingExcluded: true, windLimit: "Per terms", strengths: ["20-year material warranty on acrylic", "Premium formulation"], weaknesses: ["Material only", "Ponding excluded", "Prorated", "Not transferable"], bestFor: "Budget acrylic projects needing extended material coverage", rating: 4 },
-  { id: "c-apoc-sys-lm", category: "Coating", manufacturer: "APOC", name: "System L&M Warranty", membranes: ["Silicone", "Acrylic", "Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "APOC Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Full L&M system warranty available", "Founded 1913, #1 US asphalt/acrylic producer", "Multi-chemistry options"], weaknesses: ["30-day written notice for claims", "Must use APOC Certified Applicator"], bestFor: "Full system coating warranty from established manufacturer", rating: 7 },
-  { id: "c-karnak-sil-lm", category: "Coating", manufacturer: "KARNAK", name: "Karna-Sil Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Q Applicator Program", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Ponding NOT excluded", "NSF rated for potable rainwater", "Woman-owned certified", "SRI 110 initial / 86 aged"], weaknesses: ["Pre-approval required", "Inspection after payment", "5-10 day processing", "Smaller manufacturer footprint"], bestFor: "Sustainability-focused projects or potable rainwater applications", rating: 7 },
-  { id: "c-karnak-acr-lm", category: "Coating", manufacturer: "KARNAK", name: "Acrylic/Silicone L&M", membranes: ["Acrylic", "Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Q Applicator Program", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Separate forms for metal vs non-metal substrates", "Up to 20-year terms", "NSF rated"], weaknesses: ["Smaller manufacturer", "Pre-approval process required"], bestFor: "Metal or non-metal substrates needing specialty coating warranty", rating: 6 },
-  { id: "c-poly-sil-lm", category: "Coating", manufacturer: "Polyglass (MAPEI)", name: "Polybrite Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Min 2x/yr per NRCA/RCMA", inspBy: "Polyglass Registered Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["MAPEI Group backing", "Ponding NOT excluded for Polybrite", "Up to 20-year terms", "Open Year option available"], weaknesses: ["$500 transfer fee + costs", "30-day advance notice for transfers", "Semi-annual inspections required", "Excludes consequential damages and attorney fees"], bestFor: "Silicone restoration backed by global MAPEI group", rating: 8 },
-  { id: "c-poly-acr-lm", category: "Coating", manufacturer: "Polyglass (MAPEI)", name: "Acrylic Fast-Dry L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Min 2x/yr", inspBy: "Polyglass Registered Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["MAPEI Group backing", "Fast-dry formulations", "Up to 20-year terms"], weaknesses: ["Ponding/lack of drainage excluded", "$500 transfer fee", "Semi-annual inspections"], bestFor: "Acrylic restoration with international manufacturer backing", rating: 7 },
-  { id: "c-everest-sil-lm", category: "Coating", manufacturer: "Everest Systems", name: "Silkoxy Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Alkoxy high-solids, no primer needed in most apps", "Ponding NOT excluded", "Houston TX manufacturing", "Up to 20-year terms"], weaknesses: ["Smaller manufacturer", "Must use Everest Certified Applicator"], bestFor: "Primer-free silicone application with full L&M warranty", rating: 8 },
-  { id: "c-everest-acr-lm", category: "Coating", manufacturer: "Everest Systems", name: "EverCoat Acrylic L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Plasticizer-free formulation", "High-tensile option (EverCoat HT)", "Fluorostar PVDF topcoat for 10-yr color-fast", "Up to 20-year terms"], weaknesses: ["Ponding water excluded", "Smaller manufacturer footprint"], bestFor: "Premium acrylic with color-fast PVDF topcoat option", rating: 7 },
-  { id: "c-everest-ure-lm", category: "Coating", manufacturer: "Everest Systems", name: "EverMax/EverSol Urethane L&M", membranes: ["Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["EverMax FR for fire-resistant polyurea", "Eco-Level self-leveling for ponding areas", "Extreme weather protection", "Up to 20-year terms"], weaknesses: ["Specialty application required", "Must use Everest Certified Applicator"], bestFor: "Extreme weather or fire-resistant coating applications", rating: 8 },
-  { id: "c-far-sil-lm", category: "Coating", manufacturer: "FAR (Fluid Applied Roofing)", name: "ProSil Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "FAR Certified Contractor/Inspector", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Ponding NOT excluded", "Up to 20-year terms", "FAR Certified Inspector program", "Alkoxy and high-solids options"], weaknesses: ["Newer manufacturer", "Must use FAR Certified Contractor"], bestFor: "Silicone restoration with dedicated inspector certification program", rating: 7 },
-  { id: "c-far-hybrid-lm", category: "Coating", manufacturer: "FAR (Fluid Applied Roofing)", name: "FiberSeal PU-Acrylic Hybrid L&M", membranes: ["Urethane", "Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "FAR Certified Contractor/Inspector", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["IRE People's Choice Award 2025 & 2026", "PU-Acrylic hybrid resists ponding", "Up to 20-year terms"], weaknesses: ["Newer manufacturer", "Hybrid chemistry less established"], bestFor: "Innovative hybrid coating for ponding-prone roofs", rating: 7 },
-];
+// (WARRANTY_DB is now fetched from the API)
 
 const Stars = ({ n, max = 10 }) => {
   const filled = Math.round(n / 2);
   return <span style={{ display: "inline-flex", gap: 2 }}>{[...Array(5)].map((_, i) => <span key={i} style={{ color: i < filled ? C.yellow : C.g200 }}>{i < filled ? Ic.star : Ic.starEmpty}</span>)}</span>;
 };
 // WarrantyAnalyzer – full 3-path wizard
-function WarrantyAnalyzer({ open, onClose }) {
+function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   const [path, setPath] = useState(null);
   const [step, setStep] = useState(0);
   const [propName, setPropName] = useState("");
@@ -477,10 +211,222 @@ function WarrantyAnalyzer({ open, onClose }) {
   const [recBudget, setRecBudget] = useState("mid");
   const [recTerm, setRecTerm] = useState(15);
   const [recResults, setRecResults] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  // AI Warranty Assistant state
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiViewMode, setAiViewMode] = useState("concise");
+  const [showSaved, setShowSaved] = useState(false);
+  const [savedSpecs, setSavedSpecs] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_saved") || "[]"); } catch { return []; } });
+  const [aiInsights, setAiInsights] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_insights") || '{"helpful":{},"queries":[]}'); } catch { return { helpful: {}, queries: [] }; } });
+  const [aiTyping, setAiTyping] = useState(false);
+  const [expandedAiCards, setExpandedAiCards] = useState({});
+  const [showAllResults, setShowAllResults] = useState({});
 
   if (!open) return null;
 
-  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); };
+  const toggleAiCard = (wId) => setExpandedAiCards(prev => ({ ...prev, [wId]: !prev[wId] }));
+  const toggleShowAll = (msgId) => setShowAllResults(prev => ({ ...prev, [msgId]: !prev[msgId] }));
+
+  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); setAiMessages([]); setAiInput(""); setAiViewMode("concise"); setShowSaved(false); setAiTyping(false); setExpandedAiCards({}); setShowAllResults({}); };
+
+  const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
+
+  // ── AI ASSISTANT ENGINE ────────────────────────────────────────
+  const persistInsights = (next) => { setAiInsights(next); localStorage.setItem("wai_insights", JSON.stringify(next)); };
+  const persistSaved = (next) => { setSavedSpecs(next); localStorage.setItem("wai_saved", JSON.stringify(next)); };
+
+  const parseContractorQuery = (text) => {
+    const lower = text.toLowerCase();
+    const intent = { membranes: [], manufacturers: [], minTerm: null, budget: null, keywords: [], askingSpecs: false, askingInspection: false, askingStrengths: false };
+    const membraneMap = { tpo: "TPO", pvc: "PVC", epdm: "EPDM", "mod bit": "Mod Bit", "modified bitumen": "Mod Bit", bur: "BUR", "built-up": "BUR", acrylic: "Acrylic", silicone: "Silicone", spf: "SPF", "spray foam": "SPF" };
+    Object.entries(membraneMap).forEach(([k, v]) => { if (lower.includes(k) && !intent.membranes.includes(v)) intent.membranes.push(v); });
+    const knownMfrs = [...new Set(WARRANTY_DB.map(w => w.manufacturer))];
+    knownMfrs.forEach(m => { if (lower.includes(m.toLowerCase())) intent.manufacturers.push(m); });
+    const termMatch = lower.match(/(\d+)\s*[-\s]?\s*(?:year|yr)/);
+    if (termMatch) intent.minTerm = parseInt(termMatch[1]);
+    if (/cheap|budget|economy|affordable|low.?cost/.test(lower)) intent.budget = "low";
+    if (/premium|best|top|high.?end|deluxe/.test(lower)) intent.budget = "high";
+    if (/spec|specification|requirement|need|install/.test(lower)) intent.askingSpecs = true;
+    if (/inspect|maintenance|check/.test(lower)) intent.askingInspection = true;
+    if (/strength|advantage|pro|benefit|good/.test(lower)) intent.askingStrengths = true;
+    if (/weak|disadvantage|con|downside|bad|issue/.test(lower)) intent.askingStrengths = true;
+    return intent;
+  };
+
+  const matchWarranties = (intent) => {
+    let pool = [...WARRANTY_DB];
+    if (intent.membranes.length) pool = pool.filter(w => (w.membranes || []).some(m => intent.membranes.includes(m)));
+    if (intent.manufacturers.length) pool = pool.filter(w => intent.manufacturers.includes(w.manufacturer));
+    if (intent.minTerm) pool = pool.filter(w => w.term >= intent.minTerm * 0.8);
+    if (intent.budget === "low") pool = pool.filter(w => w.rating <= 7);
+    if (intent.budget === "high") pool = pool.filter(w => w.rating >= 8);
+    // Boost warranties that contractors found helpful
+    const helpful = aiInsights.helpful || {};
+    pool.sort((a, b) => {
+      const ha = helpful[a.id] || 0, hb = helpful[b.id] || 0;
+      if (hb !== ha) return hb - ha;
+      return b.rating - a.rating;
+    });
+    return pool;
+  };
+
+  const generateAiResponse = (text, matches, intent) => {
+    if (matches.length === 0) return "I couldn't find any warranties matching your criteria. Try broadening your search — for example, mention a membrane type (TPO, PVC, EPDM), a manufacturer, or a term length.";
+    const memStr = intent.membranes.length ? intent.membranes.join("/") : "all membrane types";
+    const mfrStr = intent.manufacturers.length ? intent.manufacturers.join(", ") : "";
+    const termStr = intent.minTerm ? `${intent.minTerm}+ year` : "";
+    let intro = `Found ${matches.length} warrant${matches.length > 1 ? "ies" : "y"} matching`;
+    const parts = [];
+    if (mfrStr) parts.push(mfrStr);
+    parts.push(memStr);
+    if (termStr) parts.push(termStr + " term");
+    intro += " " + parts.join(" · ") + ".";
+    if (matches.length > 5) intro += ` Showing top 5 of ${matches.length}.`;
+    const helpful = aiInsights.helpful || {};
+    const anyHelpful = matches.some(w => (helpful[w.id] || 0) >= 1);
+    if (anyHelpful) intro += " Results include warranties other contractors have found helpful.";
+    if (intent.askingSpecs) intro += " Here are the full specs:";
+    else if (intent.askingInspection) intro += " Inspection details included below:";
+    return intro;
+  };
+
+  const handleAiSend = (overrideText) => {
+    const text = (overrideText || aiInput).trim();
+    if (!text) return;
+    const userMsg = { id: Date.now(), role: "user", text, ts: new Date().toISOString() };
+    setAiMessages(prev => [...prev, userMsg]);
+    setAiInput("");
+    setAiTyping(true);
+    // Track query
+    const nextInsights = { ...aiInsights, queries: [...(aiInsights.queries || []), { q: text, ts: new Date().toISOString() }] };
+    persistInsights(nextInsights);
+    // Simulate processing delay
+    setTimeout(() => {
+      const intent = parseContractorQuery(text);
+      const matches = matchWarranties(intent);
+      const reply = generateAiResponse(text, matches, intent);
+      const assistantMsg = { id: Date.now() + 1, role: "assistant", text: reply, warranties: matches, intent, ts: new Date().toISOString(), ratings: {} };
+      setAiMessages(prev => [...prev, assistantMsg]);
+      setAiTyping(false);
+    }, 600 + Math.random() * 400);
+  };
+
+  const rateWarranty = (msgId, warrantyId, positive) => {
+    setAiMessages(prev => prev.map(m => m.id === msgId ? { ...m, ratings: { ...(m.ratings || {}), [warrantyId]: positive } } : m));
+    if (positive) {
+      const next = { ...aiInsights, helpful: { ...(aiInsights.helpful || {}), [warrantyId]: ((aiInsights.helpful || {})[warrantyId] || 0) + 1 } };
+      persistInsights(next);
+    }
+  };
+
+  const saveSpecFromMsg = (msg) => {
+    const entry = { id: Date.now(), query: aiMessages.find(m => m.role === "user" && m.id < msg.id)?.text || "Saved spec", warranties: msg.warranties || [], ts: new Date().toISOString() };
+    const next = [entry, ...savedSpecs];
+    persistSaved(next);
+  };
+
+  const deleteSavedSpec = (specId) => { persistSaved(savedSpecs.filter(s => s.id !== specId)); };
+
+  const downloadSpecPdf = (warranties, title) => {
+    const rows = warranties.map(w => `
+      <div style="border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:12px;page-break-inside:avoid">
+        <h3 style="margin:0 0 4px;color:#0B1F3F">${w.manufacturer} | ${(w.membranes||[]).join(", ")} | ${w.term} Year</h3>
+        <p style="margin:0 0 10px;color:#666;font-size:12px">${w.name}</p>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Rating</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.rating}/10</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>NDL</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.ndl?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Labor Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.laborCovered?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Material Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.materialCovered?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Consequential Damages</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.consequential?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Dollar Cap</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.dollarCap||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Transferable</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.transferable?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Ponding Excluded</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.pondingExcluded?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Wind Limit</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.windLimit||"Standard"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Hail Coverage</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.hailCoverage||"Standard"}</td></tr>
+          ${w.thickness?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Thickness</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+w.thickness+'</td></tr>':''}
+          ${w.installationMethod?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Install Method</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+w.installationMethod+'</td></tr>':''}
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspection Freq</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspFreq||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspected By</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspBy||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Membranes</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${(w.membranes||[]).join(", ")}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Category</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.category}</td></tr>
+          ${w.recoverEligible!=null?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Re-cover Eligible</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">'+(w.recoverEligible?"Yes":"No")+'</td></tr>':''}
+          ${w.warrantyFeePerSq?'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Warranty Fee</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">$'+w.warrantyFeePerSq+'/sq</td></tr>':''}
+        </table>
+        ${(w.strengths||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#388e3c;font-size:12px">Strengths</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.strengths.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
+        ${(w.weaknesses||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#d32f2f;font-size:12px">Weaknesses</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.weaknesses.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
+        ${w.bestFor ? '<p style="margin:8px 0 0;font-style:italic;font-size:12px;color:#666">Best for: '+w.bestFor+'</p>' : ''}
+      </div>
+    `).join("");
+    const html = '<!DOCTYPE html><html><head><title>Warranty Spec Sheet</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;color:#333}@media print{body{padding:12px}}</style></head><body><h1 style="color:#0B1F3F;font-size:20px;margin-bottom:4px">Warranty Spec Sheet</h1><p style="color:#666;font-size:13px;margin-bottom:20px">' + title + ' &mdash; Generated ' + new Date().toLocaleDateString() + '</p>' + rows + '<p style="text-align:center;color:#aaa;font-size:10px;margin-top:24px">Generated by RoofTracker Warranty Management</p></body></html>';
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const AI_SUGGESTIONS = [
+    "I have a TPO roof — what's the best 20-year warranty?",
+    "What are the inspection requirements for GAF warranties?",
+    "Show me Carlisle PVC warranty specs",
+    "Best budget-friendly EPDM warranty options?",
+    "Which warranties cover consequential damages?",
+    "Compare Sika Sarnafil vs Carlisle for PVC roofs",
+  ];
+
+  const WarrantyExpand = ({ w }) => (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6, marginBottom: 12 }}>
+        {[
+          ["Labor Covered", w.laborCovered, false],
+          ["Material Covered", w.materialCovered, false],
+          ["Consequential", w.consequential, false],
+          ["Transferable", w.transferable, false],
+          ["Ponding Excluded", w.pondingExcluded, true],
+          ["NDL", w.ndl, false],
+          ["Re-cover Eligible", w.recoverEligible, false],
+        ].filter(([, val]) => val !== null && val !== undefined).map(([label, val, invert]) => (
+          <div key={label} style={{ fontSize: 11, fontFamily: F.body, color: C.g600 }}>
+            <span>{(invert ? !val : val) ? "✅" : "❌"}</span> {label}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {[
+          ["Dollar Cap", w.dollarCap || "N/A"],
+          ["Wind Limit", w.windLimit || "Standard"],
+          ["Inspection Freq", w.inspFreq || "N/A"],
+          ["Inspected By", w.inspBy || "N/A"],
+          ["Category", w.category],
+          ["Membranes", (w.membranes || []).join(", ")],
+          ["Thickness", w.thickness],
+          ["Install Method", w.installationMethod],
+          ["Hail Coverage", w.hailCoverage],
+          ["Warranty Fee", w.warrantyFeePerSq ? `$${w.warrantyFeePerSq}/sq` : null],
+          ["Product Lines", w.productLines],
+        ].filter(([, val]) => val).map(([label, val]) => (
+          <div key={label}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.g400, fontFamily: F.head, textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
+            <div style={{ fontSize: 12, color: C.navy, fontFamily: F.body }}>{val}</div>
+          </div>
+        ))}
+      </div>
+      {(w.strengths || []).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 4 }}>Strengths</div>
+          {w.strengths.map((s, i) => <div key={i} style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 2, paddingLeft: 14, position: "relative" }}><span style={{ color: C.green, position: "absolute", left: 0 }}>✓</span> {s}</div>)}
+        </div>
+      )}
+      {(w.weaknesses || []).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.red, fontFamily: F.head, marginBottom: 4 }}>Weaknesses</div>
+          {w.weaknesses.map((s, i) => <div key={i} style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 2, paddingLeft: 14, position: "relative" }}><span style={{ color: C.red, position: "absolute", left: 0 }}>✕</span> {s}</div>)}
+        </div>
+      )}
+      {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic", marginTop: 4 }}>Best for: {w.bestFor}</div>}
+      {w.notes && <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body, marginTop: 6 }}>Note: {w.notes}</div>}
+      {w.referenceUrl && <a href={w.referenceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: C.blue, fontFamily: F.body, marginTop: 4, display: "inline-block" }}>Manufacturer website →</a>}
+    </div>
+  );
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 };
   const modal = { background: C.white, borderRadius: 20, padding: 32, maxWidth: 820, width: "95vw", maxHeight: "90vh", overflowY: "auto", position: "relative" };
@@ -499,7 +445,8 @@ function WarrantyAnalyzer({ open, onClose }) {
           {[
             { id: "setup", icon: Ic.accounts, title: "New Property Setup", desc: "Register a new property and configure roof sections for warranty tracking." },
             { id: "compare", icon: Ic.warranties, title: "Warranty Comparison", desc: "Compare up to 4 warranties side by side across key coverage dimensions." },
-            { id: "recommend", icon: Ic.inspections, title: "Warranty Recommendation", desc: "Get AI-matched warranty suggestions based on roof profile and budget." }
+            { id: "recommend", icon: Ic.inspections, title: "Warranty Recommendation", desc: "Get AI-matched warranty suggestions based on roof profile and budget." },
+            { id: "ai", icon: Ic.zap, title: "AI Spec Assistant", desc: "Ask questions in plain English. Get spec sheets, coverage details, and save answers for later." }
           ].map(p => (
             <button key={p.id} onClick={() => setPath(p.id)} style={{ background: C.white, border: "2px solid " + C.g200, borderRadius: 14, padding: 20, textAlign: "left", cursor: "pointer", transition: "all .2s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.background = C.g50; }}
@@ -618,7 +565,7 @@ function WarrantyAnalyzer({ open, onClose }) {
 
   // ---- WARRANTY COMPARISON ----
   if (path === "compare") {
-    const filtered = WARRANTY_DB.filter(w => !compFilter || w.name.toLowerCase().includes(compFilter.toLowerCase()) || (w.manufacturer || "").toLowerCase().includes(compFilter.toLowerCase()));
+    const filtered = WARRANTY_DB.filter(w => !compFilter || w.name.toLowerCase().includes(compFilter.toLowerCase()) || (w.manufacturer || "").toLowerCase().includes(compFilter.toLowerCase()) || (w.membranes || []).some(m => m.toLowerCase().includes(compFilter.toLowerCase())));
     const selected = WARRANTY_DB.filter(w => compIds.includes(w.id));
     const toggleComp = (id) => setCompIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 4 ? [...prev, id] : prev);
 
@@ -634,15 +581,19 @@ function WarrantyAnalyzer({ open, onClose }) {
             <div>
               <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 16 }}>Select up to 4 warranties to compare side by side.</p>
               <input value={compFilter} onChange={e => setCompFilter(e.target.value)} placeholder="Search warranties..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.g200, fontFamily: F.body, fontSize: 13, marginBottom: 16, boxSizing: "border-box" }} />
-              <div style={{ maxHeight: 400, overflowY: "auto", display: "grid", gap: 8 }}>
+              <div style={{ maxHeight: 500, overflowY: "auto", display: "grid", gap: 8 }}>
                 {filtered.map(w => (
-                  <button key={w.id} onClick={() => toggleComp(w.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, cursor: "pointer", textAlign: "left" }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.name}</div>
-                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}yr · Rating: {w.rating}/10</div>
+                  <div key={w.id} style={{ borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : expandedId === w.id ? C.blue : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, textAlign: "left" }}>
+                    <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 12 }}>
+                      <div onClick={(e) => { e.stopPropagation(); toggleComp(w.id); }} style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
+                      <div onClick={() => toggleExpand(w.id)} style={{ flex: 1, cursor: "pointer" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</div>
+                        <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.name} · Rating: {w.rating}/10</div>
+                      </div>
+                      <div onClick={() => toggleExpand(w.id)} style={{ cursor: "pointer", color: C.g400, transform: expandedId === w.id ? "rotate(90deg)" : "none", transition: "transform 0.15s ease", flexShrink: 0 }}>{Ic.chevR}</div>
                     </div>
-                    <div style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
-                  </button>
+                    {expandedId === w.id && <div style={{ padding: "0 16px 14px" }}><WarrantyExpand w={w} /></div>}
+                  </div>
                 ))}
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
@@ -657,7 +608,7 @@ function WarrantyAnalyzer({ open, onClose }) {
                   <thead>
                     <tr style={{ background: C.g50 }}>
                       <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200 }}>Feature</th>
-                      {selected.map(w => <th key={w.id} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200, minWidth: 140 }}>{w.name}</th>)}
+                      {selected.map(w => <th key={w.id} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200, minWidth: 140 }}><div>{w.manufacturer} | {w.term}yr</div><div style={{ fontSize: 10, fontWeight: 400, color: C.g500 }}>{(w.membranes||[]).join(", ")}</div><div style={{ fontSize: 9, fontWeight: 400, color: C.g400 }}>{w.name}</div></th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -665,6 +616,7 @@ function WarrantyAnalyzer({ open, onClose }) {
                       { label: "Manufacturer", fn: w => w.manufacturer },
                       { label: "Term", fn: w => w.term + " years" },
                       { label: "Rating", fn: w => w.rating + "/10" },
+                      { label: "NDL", fn: w => w.ndl ? "✅ Yes" : "❌ No" },
                       { label: "Labor Covered", fn: w => w.laborCovered ? "✅" : "❌" },
                       { label: "Material Covered", fn: w => w.materialCovered ? "✅" : "❌" },
                       { label: "Consequential", fn: w => w.consequential ? "✅" : "❌" },
@@ -672,9 +624,14 @@ function WarrantyAnalyzer({ open, onClose }) {
                       { label: "Transferable", fn: w => w.transferable ? "✅" : "❌" },
                       { label: "Ponding Excluded", fn: w => w.pondingExcluded ? "⚠️ Yes" : "✅ No" },
                       { label: "Wind Limit", fn: w => w.windLimit || "Standard" },
+                      { label: "Hail Coverage", fn: w => w.hailCoverage || "Standard" },
+                      { label: "Thickness", fn: w => w.thickness || "N/A" },
+                      { label: "Install Method", fn: w => w.installationMethod || "N/A" },
                       { label: "Inspection Freq", fn: w => w.inspFreq || "N/A" },
                       { label: "Inspected By", fn: w => w.inspBy || "N/A" },
                       { label: "Membranes", fn: w => (w.membranes || []).join(", ") },
+                      { label: "Re-cover Eligible", fn: w => w.recoverEligible ? "✅ Yes" : w.recoverEligible === false ? "❌ No" : "N/A" },
+                      { label: "Warranty Fee", fn: w => w.warrantyFeePerSq ? `$${w.warrantyFeePerSq}/sq` : "N/A" },
                       { label: "Best For", fn: w => w.bestFor || "N/A" },
                     ].map((row, i) => (
                       <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.g50 }}>
@@ -759,28 +716,36 @@ function WarrantyAnalyzer({ open, onClose }) {
           </p>
           <div style={{ display: "grid", gap: 14 }}>
             {(recResults || []).map((w, i) => (
-              <div key={w.id} style={{ border: "1.5px solid " + (i === 0 ? C.green : C.g200), borderRadius: 14, padding: 18, background: i === 0 ? C.g50 : C.white }}>
+              <div key={w.id} onClick={() => toggleExpand(w.id)} style={{ border: "1.5px solid " + (i === 0 ? C.green : expandedId === w.id ? C.blue : C.g200), borderRadius: 14, padding: 18, background: i === 0 ? C.g50 : C.white, cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       {i === 0 && <span style={{ background: C.green, color: C.white, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>BEST MATCH</span>}
-                      <span style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.name}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</span>
                     </div>
-                    <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}-year term</span>
+                    <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.name}</span>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <Stars n={w.rating} />
-                    <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <Stars n={w.rating} />
+                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</div>
+                    </div>
+                    <div style={{ color: C.g400, transform: expandedId === w.id ? "rotate(90deg)" : "none", transition: "transform 0.15s ease" }}>{Ic.chevR}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: expandedId === w.id ? 0 : 10 }}>
+                  {w.ndl && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>NDL</span>}
                   {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Labor ✓</span>}
                   {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Material ✓</span>}
                   {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Transferable</span>}
                   {w.consequential && <span style={{ background: "#fff3e0", color: "#e65100", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Consequential</span>}
                   {!w.pondingExcluded && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Ponding OK</span>}
                 </div>
-                {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+                {expandedId === w.id ? (
+                  <WarrantyExpand w={w} />
+                ) : (
+                  w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>
+                )}
               </div>
             ))}
           </div>
@@ -793,180 +758,1392 @@ function WarrantyAnalyzer({ open, onClose }) {
     );
   }
 
+  // ---- AI SPEC ASSISTANT ----
+  if (path === "ai") {
+    const msgContainerRef = { current: null };
+    const helpful = aiInsights.helpful || {};
+
+    const ConciseCard = ({ w, msgId }) => {
+      const isExp = expandedAiCards[w.id];
+      return (
+      <div style={{ border: `1.5px solid ${isExp ? C.green : C.g200}`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, background: C.white, transition: "border-color .2s" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <span onClick={() => toggleAiCard(w.id)} style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, cursor: "pointer", borderBottom: "1px dashed " + C.g300 }} title="Click to expand">{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term}yr</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span onClick={() => toggleAiCard(w.id)} style={{ fontSize: 11, color: C.g400, fontFamily: F.body, cursor: "pointer" }}>{isExp ? "See Less" : "See More"}</span>
+            <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+          {w.ndl && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: F.body }}>NDL</span>}
+          {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Labor</span>}
+          {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Material</span>}
+          {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Transferable</span>}
+          {w.consequential && <span style={{ background: "#fff3e0", color: "#e65100", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Consequential</span>}
+          {(helpful[w.id] || 0) >= 1 && <span style={{ background: "#fce4ec", color: "#c62828", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Contractor Favorite</span>}
+        </div>
+        {w.bestFor && <div style={{ fontSize: 11, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+        {isExp && <WarrantyExpand w={w} />}
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, true); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Helpful">👍</button>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, false); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Not helpful">👎</button>
+        </div>
+      </div>
+    );
+    };
+
+    const ExpandedCard = ({ w, msgId }) => (
+      <div style={{ border: `1.5px solid ${C.g200}`, borderRadius: 10, padding: "12px 16px", marginBottom: 8, background: C.white }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Stars n={w.rating} />
+            <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body, marginBottom: 8 }}>{w.name}</div>
+        {(helpful[w.id] || 0) >= 1 && <div style={{ fontSize: 10, color: "#c62828", fontFamily: F.body, marginBottom: 8, fontWeight: 600 }}>Contractors found this helpful ({helpful[w.id]}x)</div>}
+        <WarrantyExpand w={w} />
+        <div style={{ display: "flex", gap: 6, marginTop: 8, borderTop: `1px solid ${C.g100}`, paddingTop: 8 }}>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, true); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>👍 Helpful</button>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, false); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>👎 Not useful</button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={{ ...modal, maxWidth: 900, display: "flex", flexDirection: "column", padding: 0 }} onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div style={{ padding: "20px 24px 0", borderBottom: `1px solid ${C.g100}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>{Ic.zap} AI Spec Assistant</h2>
+              <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+            </div>
+            <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
+              <button onClick={() => setShowSaved(false)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: F.head, color: !showSaved ? C.navy : C.g400, background: "none", border: "none", borderBottom: !showSaved ? `2px solid ${C.green}` : "2px solid transparent", cursor: "pointer" }}>Chat</button>
+              <button onClick={() => setShowSaved(true)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: F.head, color: showSaved ? C.navy : C.g400, background: "none", border: "none", borderBottom: showSaved ? `2px solid ${C.green}` : "2px solid transparent", cursor: "pointer" }}>Saved Specs ({savedSpecs.length})</button>
+            </div>
+          </div>
+
+          {showSaved ? (
+            /* ── SAVED SPECS LIBRARY ── */
+            <div style={{ padding: 24, flex: 1, overflowY: "auto" }}>
+              {savedSpecs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: C.g400 }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>{Ic.file}</div>
+                  <div style={{ fontSize: 14, fontFamily: F.body }}>No saved specs yet. Chat with the assistant and save helpful results.</div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {savedSpecs.map(spec => (
+                    <div key={spec.id} style={{ border: `1.5px solid ${C.g200}`, borderRadius: 12, padding: 16, background: C.white }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{spec.query}</div>
+                          <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{spec.warranties.length} warrant{spec.warranties.length !== 1 ? "ies" : "y"} · Saved {new Date(spec.ts).toLocaleDateString()}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => downloadSpecPdf(spec.warranties, spec.query)} style={{ background: C.green, color: C.white, border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>PDF</button>
+                          <button onClick={() => deleteSavedSpec(spec.id)} style={{ background: "none", border: `1px solid ${C.g200}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: C.red }}>Delete</button>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {spec.warranties.map(w => (
+                          <span key={w.id} style={{ background: C.g50, border: `1px solid ${C.g200}`, borderRadius: 6, padding: "2px 8px", fontSize: 10, color: C.navy, fontFamily: F.body }}>{w.manufacturer} {w.term}yr {(w.membranes||[]).join("/")}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── CHAT INTERFACE ── */
+            <>
+              {/* View mode toggle + DB info */}
+              <div style={{ padding: "10px 24px", borderBottom: `1px solid ${C.g100}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>Searching {WARRANTY_DB.length} warranties · {Object.keys(helpful).length > 0 ? Object.keys(helpful).length + " contractor-rated" : "Learning from your feedback"}</span>
+                <div style={{ display: "flex", gap: 0, border: `1px solid ${C.g200}`, borderRadius: 6, overflow: "hidden" }}>
+                  {[["concise", "Concise"], ["expanded", "Full Specs"]].map(([k, lbl]) => (
+                    <button key={k} onClick={() => setAiViewMode(k)} style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, fontFamily: F.head, background: aiViewMode === k ? C.navy : C.white, color: aiViewMode === k ? C.white : C.g600, border: "none", cursor: "pointer" }}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Messages area */}
+              <div ref={el => { msgContainerRef.current = el; if (el) el.scrollTop = el.scrollHeight; }} style={{ flex: 1, overflowY: "auto", padding: 24, minHeight: 300, maxHeight: "calc(90vh - 260px)" }}>
+                {aiMessages.length === 0 && !aiTyping && (
+                  <div style={{ textAlign: "center", padding: "24px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 8 }}>{Ic.zap}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 4 }}>Ask me about warranty specs</div>
+                    <div style={{ fontSize: 12, color: C.g500, fontFamily: F.body, marginBottom: 20, maxWidth: 400, margin: "0 auto 20px" }}>Describe your roof, mention a manufacturer, membrane, or term length. I will find matching warranties and show you the full specs.</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+                      {AI_SUGGESTIONS.map((s, i) => (
+                        <button key={i} onClick={() => handleAiSend(s)} style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${C.g200}`, background: C.white, color: C.navy, fontSize: 12, fontFamily: F.body, cursor: "pointer", textAlign: "left", maxWidth: 260, transition: "all .15s" }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.background = C.g50; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = C.g200; e.currentTarget.style.background = C.white; }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiMessages.map(msg => (
+                  <div key={msg.id} style={{ marginBottom: 16 }}>
+                    {msg.role === "user" ? (
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <div style={{ background: C.navy, color: C.white, padding: "10px 16px", borderRadius: "14px 14px 4px 14px", maxWidth: "75%", fontSize: 13, fontFamily: F.body, lineHeight: 1.5 }}>{msg.text}</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <span style={{ background: C.green, color: C.white, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>AI</span>
+                          <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>Spec Assistant</span>
+                        </div>
+                        <div style={{ background: C.g50, padding: "12px 16px", borderRadius: "4px 14px 14px 14px", maxWidth: "90%", fontSize: 13, fontFamily: F.body, lineHeight: 1.5, color: C.navy }}>
+                          <div style={{ marginBottom: (msg.warranties || []).length > 0 ? 10 : 0 }}>{msg.text}</div>
+                          {(msg.warranties || []).length > 0 && (() => {
+                            const all = msg.warranties;
+                            const isShowingAll = showAllResults[msg.id];
+                            const visible = isShowingAll ? all : all.slice(0, 5);
+                            const remaining = all.length - 5;
+                            return (
+                            <>
+                              {visible.map(w => (
+                                aiViewMode === "concise"
+                                  ? <ConciseCard key={w.id} w={w} msgId={msg.id} />
+                                  : <ExpandedCard key={w.id} w={w} msgId={msg.id} />
+                              ))}
+                              {remaining > 0 && (
+                                <button onClick={() => toggleShowAll(msg.id)} style={{ width: "100%", padding: "8px 0", marginBottom: 6, background: C.g50, border: `1.5px dashed ${C.g300}`, borderRadius: 8, color: C.navy, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer", transition: "all .15s" }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.color = C.green; }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.g300; e.currentTarget.style.color = C.navy; }}>
+                                  {isShowingAll ? "Show Top 5 Only" : `Show All Results (${remaining} more)`}
+                                </button>
+                              )}
+                              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                                <button onClick={() => saveSpecFromMsg(msg)} style={{ background: C.green, color: C.white, border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Save These Specs</button>
+                                <button onClick={() => downloadSpecPdf(msg.warranties, msg.text.slice(0, 60))} style={{ background: C.white, color: C.navy, border: `1px solid ${C.g200}`, borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Download PDF</button>
+                              </div>
+                            </>
+                            );
+                          })()}
+                          {/* Show feedback status */}
+                          {msg.ratings && Object.keys(msg.ratings).length > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 10, color: C.g400, fontFamily: F.body }}>
+                              {Object.values(msg.ratings).filter(Boolean).length > 0 && "Thanks for your feedback — this helps improve future results."}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {aiTyping && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+                    <span style={{ background: C.green, color: C.white, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>AI</span>
+                    <div style={{ background: C.g50, padding: "10px 16px", borderRadius: "4px 14px 14px 14px", fontSize: 13, fontFamily: F.body, color: C.g400 }}>Searching warranty database...</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Input area */}
+              <div style={{ padding: "12px 24px 16px", borderTop: `1px solid ${C.g100}`, background: C.white }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAiSend(); } }} placeholder='Try: "I have a TPO roof and need a 20-year warranty..."' style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, fontFamily: F.body, fontSize: 13, outline: "none", color: C.navy }} />
+                  <Btn primary onClick={() => handleAiSend()} style={{ opacity: aiInput.trim() ? 1 : 0.4 }}>Send</Btn>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                  <span style={{ fontSize: 10, color: C.g400, fontFamily: F.body }}>Press Enter to send · Mention membrane, manufacturer, or term length</span>
+                  <button onClick={() => setPath(null)} style={{ background: "none", border: "none", fontSize: 11, color: C.g400, cursor: "pointer", fontFamily: F.body }}>← Back to menu</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
-function Accounts({ onSelectRoof }) {
+// ══════════════════════════════════════════════════════════════════════
+//  AUTH SCREEN — Signup / Login with SSO + Email
+// ══════════════════════════════════════════════════════════════════════
+
+const COMPANY_TYPES = ["Commercial Roofing", "Product Manufacturing", "Consulting", "Architect", "GC", "Other"];
+
+function AuthScreen({ onAuth, oauthError: initialOauthError, initialResetToken }) {
+  const [mode, setMode] = useState(initialResetToken ? "reset" : "signup"); // "signup" | "login" | "forgot" | "reset"
+  const [step, setStep] = useState(0); // 0=credentials, 1=profile, 2=phone verify
+  const [error, setError] = useState(initialOauthError || "");
+  const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [resetToken, setResetToken] = useState(initialResetToken || "");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+
+  // Form fields
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyType, setCompanyType] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [userId, setUserId] = useState(null);
+  const [codeSent, setCodeSent] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+
+  const resetForm = () => {
+    setFirstName(""); setLastName(""); setEmail(""); setPassword(""); setConfirmPassword("");
+    setPhone(""); setCompanyName(""); setCompanyType(""); setJobTitle("");
+    setPhoneCode(""); setUserId(null); setCodeSent(false); setPhoneVerified(false);
+    setStep(0); setError("");
+  };
+
+  const handleRegister = async () => {
+    setError("");
+    if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    setLoading(true);
+    try {
+      const res = await register({ firstName, lastName, email, password, phone, companyName, companyType, jobTitle });
+      localStorage.setItem("auth_token", res.token);
+      setUserId(res.user.id);
+      if (phone) {
+        setStep(2); // go to phone verify
+      } else {
+        onAuth(res.user);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    setError("");
+    if (!email || !password) { setError("Please enter email and password"); return; }
+    setLoading(true);
+    try {
+      const res = await login({ email, password });
+      localStorage.setItem("auth_token", res.token);
+      onAuth(res.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError(""); setSuccessMsg("");
+    if (!email) { setError("Please enter your email address"); return; }
+    setLoading(true);
+    try {
+      await requestPasswordReset(email);
+      setSuccessMsg("If an account exists with this email, a password reset link has been sent. Check your inbox.");
+    } catch (err) {
+      setSuccessMsg("If an account exists with this email, a password reset link has been sent. Check your inbox.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setError(""); setSuccessMsg("");
+    if (!newPassword) { setError("Please enter a new password"); return; }
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (newPassword !== confirmNewPassword) { setError("Passwords do not match"); return; }
+    setLoading(true);
+    try {
+      await resetPassword(resetToken, newPassword);
+      setSuccessMsg("Your password has been reset successfully. You can now sign in.");
+      setTimeout(() => { setMode("login"); setSuccessMsg(""); setNewPassword(""); setConfirmNewPassword(""); }, 2000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSSO = async (provider) => {
+    const apiUrl = import.meta.env.VITE_API_URL || "/api";
+    if (provider === "google") {
+      window.location.href = `${apiUrl}/auth/google`;
+    } else {
+      setError(`${provider} SSO is not yet configured. Use Google or email signup for now.`);
+    }
+  };
+
+  const handleSendCode = async () => {
+    if (!phone || !userId) return;
+    setLoading(true);
+    try {
+      await sendPhoneCode(userId, phone);
+      setCodeSent(true);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyPhone = async () => {
+    if (!phoneCode || !userId) return;
+    setLoading(true);
+    try {
+      await verifyPhone(userId, phoneCode);
+      setPhoneVerified(true);
+      setError("");
+      // Brief delay then proceed
+      setTimeout(() => {
+        getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId }));
+      }, 1200);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // SSO buttons
+  const SSOButton = ({ provider, icon, label, color }) => (
+    <button onClick={() => handleSSO(provider)} style={{
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+      width: "100%", padding: "12px 16px", borderRadius: 10,
+      border: `1.5px solid ${C.g200}`, background: C.white,
+      fontSize: 14, fontWeight: 600, fontFamily: F.body, color: C.navy,
+      cursor: "pointer", transition: "all 0.15s ease",
+    }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = C.g50; }}
+    onMouseLeave={e => { e.currentTarget.style.borderColor = C.g200; e.currentTarget.style.background = C.white; }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  const googleIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+
+  const linkedInIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#0077B5">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+    </svg>
+  );
+
+  // ── PHONE VERIFICATION STEP ──
+  if (step === 2) {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Verify Your Phone</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>We'll send a 6-digit code to <strong>{phone}</strong></p>
+          </div>
+
+          {phoneVerified ? (
+            <div style={{ textAlign: "center", padding: "24px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.green, fontFamily: F.head }}>Phone Verified!</div>
+              <div style={{ fontSize: 13, color: C.g600, marginTop: 6 }}>Redirecting to your dashboard...</div>
+            </div>
+          ) : !codeSent ? (
+            <div>
+              <FormField label="Cell Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" required />
+              {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+              <button onClick={handleSendCode} disabled={loading || !phone} style={{
+                width: "100%", padding: "12px 16px", borderRadius: 10,
+                background: phone ? C.green : C.g200, border: "none",
+                color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+                cursor: phone ? "pointer" : "default", opacity: loading ? 0.6 : 1,
+              }}>{loading ? "Sending..." : "Send Verification Code"}</button>
+              <button onClick={() => { getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId })); }}
+                style={{ display: "block", width: "100%", background: "none", border: "none", color: C.g400, fontSize: 13, marginTop: 12, cursor: "pointer", fontFamily: F.body }}>
+                Skip for now →
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Verification Code<span style={{ color: C.red }}> *</span></label>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  {[0,1,2,3,4,5].map(i => (
+                    <input key={i} maxLength={1} value={phoneCode[i] || ""}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        if (val) {
+                          const newCode = phoneCode.split("");
+                          newCode[i] = val;
+                          setPhoneCode(newCode.join(""));
+                          // Auto-focus next
+                          const next = e.target.nextElementSibling;
+                          if (next) next.focus();
+                        }
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Backspace" && !phoneCode[i]) {
+                          const prev = e.target.previousElementSibling;
+                          if (prev) prev.focus();
+                        }
+                      }}
+                      style={{
+                        width: 44, height: 52, textAlign: "center", fontSize: 22, fontWeight: 700,
+                        borderRadius: 10, border: `2px solid ${phoneCode[i] ? C.green : C.g200}`,
+                        fontFamily: F.head, color: C.navy, outline: "none",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12, textAlign: "center" }}>{error}</div>}
+              <button onClick={handleVerifyPhone} disabled={loading || phoneCode.length < 6} style={{
+                width: "100%", padding: "12px 16px", borderRadius: 10,
+                background: phoneCode.length === 6 ? C.green : C.g200, border: "none",
+                color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+                cursor: phoneCode.length === 6 ? "pointer" : "default", opacity: loading ? 0.6 : 1,
+              }}>{loading ? "Verifying..." : "Verify Phone"}</button>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <button onClick={handleSendCode} style={{ background: "none", border: "none", color: C.blue, fontSize: 13, cursor: "pointer", fontFamily: F.body }}>Resend code</button>
+                <button onClick={() => { getMe().then(res => onAuth(res.user)).catch(() => onAuth({ id: userId })); }}
+                  style={{ background: "none", border: "none", color: C.g400, fontSize: 13, cursor: "pointer", fontFamily: F.body }}>Skip for now →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── SIGNUP STEP 1: PROFILE INFO ──
+  if (mode === "signup" && step === 1) {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 480, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Complete Your Profile</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Tell us about yourself so we can personalize your experience</p>
+          </div>
+
+          {/* Step indicator */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {["Account", "Profile", "Verify"].map((s, i) => (
+              <div key={s} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.green : C.g200, marginBottom: 4 }} />
+                <span style={{ fontSize: 10, color: i <= step ? C.navy : C.g400, fontFamily: F.body, fontWeight: i === step ? 700 : 400 }}>{s}</span>
+              </div>
+            ))}
+          </div>
+
+          <FormField label="Cell Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" required />
+          <FormField label="Company Name" value={companyName} onChange={setCompanyName} placeholder="e.g. Summit Roofing Co." required />
+          <FormField label="Type of Company" value={companyType} onChange={setCompanyType} required options={COMPANY_TYPES} placeholder="Select company type..." />
+          <FormField label="Job Title" value={jobTitle} onChange={setJobTitle} placeholder="e.g. Project Manager" required />
+
+          {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setStep(0)} style={{
+              flex: 1, padding: "12px 16px", borderRadius: 10,
+              border: `1.5px solid ${C.g200}`, background: C.white,
+              fontSize: 14, fontWeight: 600, fontFamily: F.head, color: C.navy, cursor: "pointer",
+            }}>Back</button>
+            <button onClick={handleRegister} disabled={loading} style={{
+              flex: 2, padding: "12px 16px", borderRadius: 10,
+              background: (firstName && lastName && email && password && phone && companyName && companyType && jobTitle) ? C.green : C.g200,
+              border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+              cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+            }}>{loading ? "Creating Account..." : "Create Account"}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── FORGOT PASSWORD SCREEN ──
+  if (mode === "forgot") {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Reset Your Password</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Enter your email address and we'll send you a reset link</p>
+          </div>
+
+          <FormField label="Email" value={email} onChange={setEmail} placeholder="john@company.com" type="email" required />
+
+          {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+          {successMsg && <div style={{ background: C.greenLt, border: `1px solid ${C.green}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.greenDk }}>{successMsg}</div>}
+
+          <button onClick={handleForgotPassword} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: email ? C.green : C.g200, border: "none",
+            color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Sending..." : "Send Reset Link"}</button>
+
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: C.g600 }}>
+            <button onClick={() => { setError(""); setSuccessMsg(""); setMode("login"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Back to Sign In</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RESET PASSWORD SCREEN ──
+  if (mode === "reset") {
+    return (
+      <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>Set New Password</h2>
+            <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>Enter your new password below</p>
+          </div>
+
+          <FormField label="New Password" value={newPassword} onChange={setNewPassword} placeholder="Minimum 8 characters" type="password" required />
+          <FormField label="Confirm New Password" value={confirmNewPassword} onChange={setConfirmNewPassword} placeholder="Re-enter your new password" type="password" required />
+
+          {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+          {successMsg && <div style={{ background: C.greenLt, border: `1px solid ${C.green}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.greenDk }}>{successMsg}</div>}
+
+          <button onClick={handleResetPassword} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (newPassword.length >= 8 && newPassword === confirmNewPassword) ? C.green : C.g200, border: "none",
+            color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Resetting..." : "Reset Password"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN SCREEN: SIGNUP / LOGIN ──
+  return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ background: C.white, borderRadius: 20, padding: "40px 36px", maxWidth: 440, width: "95vw", boxShadow: C.shadowXl }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+            <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 6px" }}>
+            {mode === "signup" ? "Create Your Account" : "Welcome Back"}
+          </h2>
+          <p style={{ fontSize: 13, color: C.g600, margin: 0 }}>
+            {mode === "signup" ? "Join the Roof MRI Warranty Management Platform" : "Sign in to your Warranty Manager"}
+          </p>
+        </div>
+
+        {/* Step indicator for signup */}
+        {mode === "signup" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {["Account", "Profile", "Verify"].map((s, i) => (
+              <div key={s} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.green : C.g200, marginBottom: 4 }} />
+                <span style={{ fontSize: 10, color: i <= step ? C.navy : C.g400, fontFamily: F.body, fontWeight: i === step ? 700 : 400 }}>{s}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* SSO Buttons */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+          <SSOButton provider="google" icon={googleIcon} label="Continue with Google" color="#4285F4" />
+          <SSOButton provider="linkedin" icon={linkedInIcon} label="Continue with LinkedIn" color="#0077B5" />
+        </div>
+
+        {/* Divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <div style={{ flex: 1, height: 1, background: C.g200 }} />
+          <span style={{ fontSize: 12, color: C.g400, fontFamily: F.body }}>or</span>
+          <div style={{ flex: 1, height: 1, background: C.g200 }} />
+        </div>
+
+        {/* Form Fields */}
+        {mode === "signup" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FormField label="First Name" value={firstName} onChange={setFirstName} placeholder="John" required />
+            <FormField label="Last Name" value={lastName} onChange={setLastName} placeholder="Smith" required />
+          </div>
+        )}
+
+        <FormField label="Email" value={email} onChange={setEmail} placeholder="john@company.com" type="email" required />
+        <FormField label="Password" value={password} onChange={setPassword} placeholder={mode === "signup" ? "Minimum 8 characters" : "Your password"} type="password" required />
+        {mode === "signup" && (
+          <FormField label="Confirm Password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter your password" type="password" required />
+        )}
+
+        {mode === "login" && (
+          <div style={{ textAlign: "right", marginBottom: 12, marginTop: -8 }}>
+            <button onClick={() => setMode("forgot")} style={{ background: "none", border: "none", color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F.body }}>Forgot Password?</button>
+          </div>
+        )}
+
+        {error && <div style={{ background: C.redBg, border: `1px solid ${C.redBdr}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.red }}>{error}</div>}
+
+        {/* Submit Button */}
+        {mode === "signup" ? (
+          <button onClick={() => {
+            if (!firstName || !lastName || !email || !password) { setError("Please fill in all required fields"); return; }
+            if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+            if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+            setError("");
+            setStep(1);
+          }} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (firstName && lastName && email && password.length >= 8 && password === confirmPassword) ? C.green : C.g200,
+            border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: (firstName && lastName && email && password.length >= 8 && password === confirmPassword) ? "pointer" : "default",
+          }}>Continue</button>
+        ) : (
+          <button onClick={handleLogin} disabled={loading} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 10,
+            background: (email && password) ? C.green : C.g200,
+            border: "none", color: C.white, fontSize: 14, fontWeight: 700, fontFamily: F.head,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}>{loading ? "Signing In..." : "Sign In"}</button>
+        )}
+
+        {/* Toggle mode */}
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: C.g600 }}>
+          {mode === "signup" ? (
+            <span>Already have an account? <button onClick={() => { resetForm(); setMode("login"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Sign In</button></span>
+          ) : (
+            <span>Don't have an account? <button onClick={() => { resetForm(); setMode("signup"); }} style={{ background: "none", border: "none", color: C.green, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: F.body }}>Sign Up</button></span>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: C.g400 }}>
+          A verification link will be sent to confirm your email address
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MANAGEMENT MODALS — Create owners, claims, inspections, logs, invoices
+// ══════════════════════════════════════════════════════════════════════
+
+const modalOverlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 };
+const modalBox = { background: "#ffffff", borderRadius: 20, padding: 32, maxWidth: 600, width: "95vw", maxHeight: "90vh", overflowY: "auto", position: "relative" };
+const modalTitle = { fontSize: 20, fontWeight: 800, color: "#1e2c55", fontFamily: "'Poppins', sans-serif", margin: 0 };
+const modalClose = { background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9ba3b5" };
+
+function AddOwnerModal({ open, onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [propName, setPropName] = useState("");
+  const [propAddr, setPropAddr] = useState("");
+  const [roofSection, setRoofSection] = useState("");
+  const [roofType, setRoofType] = useState("");
+  const [roofSqft, setRoofSqft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const reset = () => { setName(""); setContact(""); setEmail(""); setPhone(""); setPropName(""); setPropAddr(""); setRoofSection(""); setRoofType(""); setRoofSqft(""); };
+
+  const handleSave = async () => {
+    if (!name) return;
+    setSaving(true);
+    try {
+      const data = { name, contact, email, phone };
+      if (propName) {
+        const prop = { name: propName, address: propAddr };
+        if (roofSection) {
+          prop.roofs = [{ section: roofSection, type: roofType || null, sqFt: roofSqft ? parseInt(roofSqft) : null }];
+        }
+        data.properties = [prop];
+      }
+      await createOwner(data);
+      reset();
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error creating owner: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Add New Owner</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Owner Name" value={name} onChange={setName} placeholder="e.g. Riverside Properties LLC" required />
+        <FormField label="Contact Person" value={contact} onChange={setContact} placeholder="e.g. John Smith" />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Email" value={email} onChange={setEmail} placeholder="john@example.com" type="email" />
+          <FormField label="Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" />
+        </div>
+        <div style={{ borderTop: `1px solid ${C.g200}`, marginTop: 8, paddingTop: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Property (optional)</div>
+          <FormField label="Property Name" value={propName} onChange={setPropName} placeholder="e.g. Oakwood Business Park" />
+          <FormField label="Address" value={propAddr} onChange={setPropAddr} placeholder="e.g. 123 Main St, Suite 200" />
+        </div>
+        {propName && <div style={{ borderTop: `1px solid ${C.g200}`, marginTop: 8, paddingTop: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Roof Section (optional)</div>
+          <FormField label="Section Name" value={roofSection} onChange={setRoofSection} placeholder="e.g. Main Building - Section A" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FormField label="Roof Type" value={roofType} onChange={setRoofType} options={["TPO", "PVC", "EPDM", "Modified Bitumen", "BUR", "Metal", "Acrylic Coating", "Silicone Coating", "SPF"]} />
+            <FormField label="Square Footage" value={roofSqft} onChange={setRoofSqft} placeholder="e.g. 25000" type="number" />
+          </div>
+        </div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!name || saving) ? 0.5 : 1 }}>{saving ? "Saving..." : "Create Owner"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileClaimModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !manufacturer) return;
+    setSaving(true);
+    try {
+      await createClaim({ roofId, manufacturer, amount: amount ? parseFloat(amount) : 0, description });
+      setRoofId(""); setManufacturer(""); setAmount(""); setDescription("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error filing claim: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>File Warranty Claim</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={(v) => { setRoofId(v); const r = roofs.find(r2 => r2.id === v); if (r) setManufacturer(r.warranty.manufacturer || ""); }} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName} · {selectedRoof.ownerName}</div>}
+        <FormField label="Manufacturer" value={manufacturer} onChange={setManufacturer} placeholder="e.g. GAF" required />
+        <FormField label="Claim Amount ($)" value={amount} onChange={setAmount} placeholder="e.g. 15000" type="number" />
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Description<span style={{ color: C.red }}> *</span></label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe the issue or damage..." rows={3} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !manufacturer || saving) ? 0.5 : 1 }}>{saving ? "Filing..." : "File Claim"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleInspectionModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [date, setDate] = useState("");
+  const [type, setType] = useState("");
+  const [inspector, setInspector] = useState("");
+  const [company, setCompany] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !date || !type) return;
+    setSaving(true);
+    try {
+      await createInspection({ roofId, date, type, inspector, company, notes });
+      setRoofId(""); setDate(""); setType(""); setInspector(""); setCompany(""); setNotes("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error scheduling inspection: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Schedule Inspection</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Date" value={date} onChange={setDate} type="date" required />
+          <FormField label="Inspection Type" value={type} onChange={setType} required options={["Annual Inspection", "Bi-Annual Inspection", "Warranty Required", "Post-Storm", "Moisture Survey", "Maintenance Check"]} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Inspector" value={inspector} onChange={setInspector} placeholder="e.g. Mike Johnson" />
+          <FormField label="Company" value={company} onChange={setCompany} placeholder="e.g. Roof MRI" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special instructions or notes..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !date || !type || saving) ? 0.5 : 1 }}>{saving ? "Scheduling..." : "Schedule Inspection"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LogAccessModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [person, setPerson] = useState("");
+  const [company, setCompany] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [duration, setDuration] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !person) return;
+    setSaving(true);
+    try {
+      await createAccessLog({ roofId, person, company, purpose, date, duration, notes });
+      setRoofId(""); setPerson(""); setCompany(""); setPurpose(""); setDate(new Date().toISOString().split("T")[0]); setDuration(""); setNotes("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error logging access: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Log Roof Access</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Person" value={person} onChange={setPerson} placeholder="e.g. Mike Johnson" required />
+          <FormField label="Company" value={company} onChange={setCompany} placeholder="e.g. HVAC Solutions" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <FormField label="Purpose" value={purpose} onChange={setPurpose} options={["Inspection", "Repair", "HVAC Service", "Maintenance", "Warranty Evaluation", "Other"]} />
+          <FormField label="Date" value={date} onChange={setDate} type="date" />
+          <FormField label="Duration" value={duration} onChange={setDuration} placeholder="e.g. 2 hours" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !person || saving) ? 0.5 : 1 }}>{saving ? "Saving..." : "Log Access"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateInvoiceModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [flagged, setFlagged] = useState(false);
+  const [flagReason, setFlagReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !vendor) return;
+    setSaving(true);
+    try {
+      await createInvoice({ roofId, vendor, date, amount: amount ? parseFloat(amount) : 0, description, flagged, flagReason: flagged ? flagReason : null });
+      setRoofId(""); setVendor(""); setDate(new Date().toISOString().split("T")[0]); setAmount(""); setDescription(""); setFlagged(false); setFlagReason("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error creating invoice: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Create Invoice</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <FormField label="Vendor" value={vendor} onChange={setVendor} placeholder="e.g. ABC Roofing Co." required />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Date" value={date} onChange={setDate} type="date" />
+          <FormField label="Amount ($)" value={amount} onChange={setAmount} placeholder="e.g. 5000" type="number" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Invoice details..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body, cursor: "pointer" }}>
+            <input type="checkbox" checked={flagged} onChange={e => setFlagged(e.target.checked)} style={{ width: 16, height: 16 }} />
+            Flag for warranty review
+          </label>
+        </div>
+        {flagged && <FormField label="Flag Reason" value={flagReason} onChange={setFlagReason} placeholder="e.g. Work may be covered under warranty" />}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !vendor || saving) ? 0.5 : 1 }}>{saving ? "Creating..." : "Create Invoice"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Accounts({ OWNERS, CLAIMS, onAdd }) {
+  const navigate = useNavigate();
+  const onSelectRoof = (roofId) => navigate(`/warranties/${roofId}`);
   const [q, setQ] = useState("");
   const [exp, setExp] = useState({});
   const toggle = (id) => setExp(p => ({ ...p, [id]: !p[id] }));
-  const fil = q ? OWNERS.filter(o => o.name.toLowerCase().includes(q.toLowerCase()) || o.properties.some(p => p.name.toLowerCase().includes(q.toLowerCase()))) : OWNERS;
+  const owners = OWNERS || [];
+  const allClaims = CLAIMS || [];
+  const fil = q ? owners.filter(o => o.name.toLowerCase().includes(q.toLowerCase()) || o.properties.some(p => p.name.toLowerCase().includes(q.toLowerCase()))) : owners;
   const compDot = (c) => {
     const col = c === "current" ? C.green : c === "at-risk" ? C.yellow : C.red;
     return <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, display: "inline-block" }} />;
   };
+
+  // Compute rollup totals
+  const getRoofIds = (props) => props.flatMap(p => p.roofs.map(r => r.id));
+  const getRecovered = (roofIds) => allClaims.filter(c => roofIds.includes(c.roofId) && (c.status === "approved" || c.status === "completed")).reduce((s, c) => s + (c.amount || 0), 0);
+  const getPending = (roofIds) => allClaims.filter(c => roofIds.includes(c.roofId) && (c.status === "in-progress" || c.status === "review" || c.status === "pending")).reduce((s, c) => s + (c.amount || 0), 0);
+
+  const allRoofIds = owners.flatMap(o => getRoofIds(o.properties));
+  const totalRecovered = getRecovered(allRoofIds);
+  const totalPending = getPending(allRoofIds);
+
   return <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Account Management</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Manage owners, property managers, and building portfolios</p></div>
-      <Btn primary>{Ic.plus} Add Owner</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Add Owner</Btn>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Owners" value={OWNERS.length} icon={Ic.user} />
-      <KPI label="Properties" value={OWNERS.reduce((s,o)=>s+o.properties.length,0)} icon={Ic.building} color={C.navy} />
-      <KPI label="Roof Sections" value={OWNERS.reduce((s,o)=>s+o.properties.reduce((s2,p)=>s2+p.roofs.length,0),0)} icon={Ic.shield} />
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <KPI label="Owners" value={owners.length} icon={Ic.user} />
+      <KPI label="Properties" value={owners.reduce((s,o)=>s+o.properties.length,0)} icon={Ic.building} color={C.navy} />
+      <KPI label="Roof Sections" value={owners.reduce((s,o)=>s+o.properties.reduce((s2,p)=>s2+p.roofs.length,0),0)} icon={Ic.shield} />
+      <KPI label="Total Recovered" value={totalRecovered > 0 ? fmtMoney(totalRecovered) : "$0"} icon={Ic.dollar} color={C.green} sub={totalPending > 0 ? `${fmtMoney(totalPending)} pending` : undefined} />
     </div>
     <div style={{ position: "relative", marginBottom: 20 }}>
       <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.g400 }}>{Ic.search}</span>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search owners, PMs, or properties..." style={{ width: "100%", padding: "12px 12px 12px 42px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box" }} />
     </div>
-    {fil.map(ow => <Card key={ow.id} style={{ marginBottom: 12 }}>
+    {fil.map(ow => {
+      const owRoofIds = getRoofIds(ow.properties);
+      const owRecovered = getRecovered(owRoofIds);
+      const owPending = getPending(owRoofIds);
+      return <Card key={ow.id} style={{ marginBottom: 12 }}>
       <div onClick={() => toggle(ow.id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: `${C.navy}10`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy }}>{Ic.building}</div>
           <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{ow.name}</div>
           <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body }}>{ow.contact} · {ow.properties.length} properties</div></div>
         </div>
-        <span style={{ color: C.g400 }}>{exp[ow.id] ? Ic.chevD : Ic.chevR}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {(owRecovered > 0 || owPending > 0) && <div style={{ textAlign: "right" }}>
+            {owRecovered > 0 && <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: F.head }}>{fmtMoney(owRecovered)}</div>}
+            {owPending > 0 && <div style={{ fontSize: 11, color: "#b45309", fontFamily: F.body }}>{fmtMoney(owPending)} pending</div>}
+          </div>}
+          <span style={{ color: C.g400 }}>{exp[ow.id] ? Ic.chevD : Ic.chevR}</span>
+        </div>
       </div>
       {exp[ow.id] && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.g100}` }}>
-        {ow.properties.map(p => <div key={p.id} style={{ marginBottom: 8, padding: "10px 14px", borderRadius: 10, background: C.g50 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{p.name}</div>
-          <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{p.address}</div>
+        {ow.properties.map(p => {
+          const pRoofIds = p.roofs.map(r => r.id);
+          const pRecovered = getRecovered(pRoofIds);
+          const pPending = getPending(pRoofIds);
+          return <div key={p.id} style={{ marginBottom: 8, padding: "10px 14px", borderRadius: 10, background: C.g50 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{p.name}</div>
+              <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{p.address}</div>
+            </div>
+            {(pRecovered > 0 || pPending > 0) && <div style={{ textAlign: "right" }}>
+              {pRecovered > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head }}>{fmtMoney(pRecovered)}</div>}
+              {pPending > 0 && <div style={{ fontSize: 10, color: "#b45309", fontFamily: F.body }}>{fmtMoney(pPending)} pending</div>}
+            </div>}
+          </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             {p.roofs.map(r => <span key={r.id} onClick={() => onSelectRoof(r.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 8, background: C.white, border: `1px solid ${C.g200}`, fontSize: 11, cursor: "pointer" }}>{compDot(r.warranty.compliance)} {r.section}</span>)}
           </div>
-        </div>)}
+        </div>;
+        })}
       </div>}
-    </Card>)}
+    </Card>;
+    })}
   </div>;
 }
 
-function Warranties({ selectedRoof, setSelectedRoof }) {
-  const [pricingStore, setPricingStore] = useState({});
-  const [pricingLoading, setPricingLoading] = useState(false);
+// ── Collapsible Section ──
+function CollapsibleSection({ title, icon, color, borderColor, count, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card style={{ marginBottom: 12, borderLeft: `4px solid ${borderColor || C.g200}`, overflow: "hidden" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+        background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: color || C.navy, fontFamily: F.head }}>{title}</div>
+          {count !== undefined && <span style={{ background: C.g100, borderRadius: 10, padding: "1px 8px", fontSize: 10, fontWeight: 600, color: C.g600, fontFamily: F.body }}>{count}</span>}
+        </div>
+        <span style={{ color: C.g400, transition: "transform 0.2s ease", transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>{Ic.chevD}</span>
+      </button>
+      {open && <div style={{ marginTop: 12 }}>{children}</div>}
+    </Card>
+  );
+}
 
-  // Fetch pricing data from Google Sheets on mount
-  useEffect(() => {
-    setPricingLoading(true);
-    fetchPricingStore().then(data => {
-      if (data && Object.keys(data).length > 0) {
-        setPricingStore(data);
-      }
-      setPricingLoading(false);
-    }).catch(() => setPricingLoading(false));
-  }, []);
+function ComingSoonToast({ onClose }) {
+  const items = ["Google Earth Leak Pinning", "AI Photo Analysis", "Repair Verification", "Damage Assessment"];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: `linear-gradient(90deg, ${C.navy}, ${C.navyLt})`, marginBottom: 12, overflow: "hidden", position: "relative" }}>
+      <span style={{ color: C.green, flexShrink: 0 }}>{Ic.zap}</span>
+      <div style={{ flex: 1, overflow: "hidden", whiteSpace: "nowrap", maskImage: "linear-gradient(90deg, transparent 0%, black 5%, black 90%, transparent 100%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, black 5%, black 90%, transparent 100%)" }}>
+        <div style={{ display: "inline-block", animation: "comingSoonScroll 18s linear infinite", fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: F.body }}>
+          {items.map((t, i) => (
+            <span key={i} style={{ marginRight: 32 }}>
+              <span style={{ fontWeight: 700, color: C.green }}>Coming Soon</span>
+              <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.3)" }}>|</span>
+              {t}
+            </span>
+          ))}
+          {items.map((t, i) => (
+            <span key={`dup-${i}`} style={{ marginRight: 32 }}>
+              <span style={{ fontWeight: 700, color: C.green }}>Coming Soon</span>
+              <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.3)" }}>|</span>
+              {t}
+            </span>
+          ))}
+        </div>
+      </div>
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", flexShrink: 0, padding: 2 }}>{Ic.x}</button>
+      <style>{`@keyframes comingSoonScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+    </div>
+  );
+}
 
-  const roofs = allRoofs();
-  if (selectedRoof) {
-    const r = findRoof(selectedRoof);
-    if (!r) return null;
-    const w = r.warranty;
-    const p = pctUsed(w.start, w.end);
-    const days = daysTo(w.nextInsp);
-    return <div>
-      <button onClick={() => setSelectedRoof(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
+function WarrantyDetail({ OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
+  const { roofId } = useParams();
+  const navigate = useNavigate();
+  const selectedRoof = roofId;
+  const [showComingSoon, setShowComingSoon] = useState(true);
+  const r = findRoof(OWNERS, selectedRoof);
+  if (!r) return null;
+  const w = r.warranty;
+  const p = pctUsed(w.start, w.end);
+  const days = daysTo(w.nextInsp);
+  const roofClaims = (CLAIMS || []).filter(c => c.roofId === selectedRoof);
+  const activeClaims = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending");
+  const resolvedClaims = roofClaims.filter(c => c.status === "approved" || c.status === "completed" || c.status === "denied");
+  const totalRecovered = roofClaims.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
+  const pendingRecovery = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
+
+  return <div>
+    <button onClick={() => navigate("/warranties")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>{r.section}</h2>
-      <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 20 }}>{r.propName} · {r.propAddr}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
-        <KPI label="Manufacturer" value={w.manufacturer} icon={Ic.shield} />
-        <KPI label="Type" value={w.wType} icon={Ic.file} color={C.blue} />
+      <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 8 }}>{r.propName} · {r.propAddr}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
+      <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginBottom: 20 }}>{w.wType}</div>
+
+      {/* KPI Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
         <KPI label="Warranty Used" value={`${p.toFixed(0)}%`} icon={Ic.clock} color={p > 75 ? C.yellow : C.green} sub={`Expires ${fmtDate(w.end)}`} />
         <KPI label="Next Inspection" value={days > 0 ? `${days} days` : "OVERDUE"} icon={Ic.cal} color={days > 60 ? C.green : days > 0 ? C.yellow : C.red} sub={fmtDate(w.nextInsp)} />
+        <KPI label="Active Claims" value={activeClaims.length} icon={Ic.file} color={activeClaims.length > 0 ? C.yellow : C.green} />
+        <KPI label="Recovered" value={totalRecovered > 0 ? fmtMoney(totalRecovered) : "$0"} icon={Ic.dollar} color={C.green} />
       </div>
-      <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.green}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 8 }}>Coverage</div>
+
+      {/* Collapsible Coverage */}
+      <CollapsibleSection title="Coverage" icon={Ic.check} color={C.green} borderColor={C.green} count={w.coverage.length} defaultOpen={false}>
         {w.coverage.map((c,i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13, color: C.g600, fontFamily: F.body }}><span style={{ color: C.green }}>{Ic.check}</span>{c}</div>)}
-      </Card>
-      <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.red}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.red, fontFamily: F.head, marginBottom: 8 }}>Exclusions</div>
+      </CollapsibleSection>
+
+      {/* Collapsible Exclusions */}
+      <CollapsibleSection title="Exclusions" color={C.red} borderColor={C.red} count={w.exclusions.length} defaultOpen={false}>
         {w.exclusions.map((e,i) => <div key={i} style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 6 }}>✕ {e}</div>)}
-      </Card>
-      <Card style={{ borderLeft: `4px solid ${C.yellow}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#b45309", fontFamily: F.head, marginBottom: 8 }}>Requirements</div>
+      </CollapsibleSection>
+
+      {/* Collapsible Requirements */}
+      <CollapsibleSection title="Requirements" color="#b45309" borderColor={C.yellow} count={w.requirements.length} defaultOpen={false}>
         {w.requirements.map((r2,i) => <div key={i} style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 6 }}>{Ic.alert} {r2}</div>)}
-      </Card>
-            {/* ---- Pricing Intelligence Section ---- */}
-            <Card style={{ marginBottom: 12, borderLeft: `4px solid ${C.green}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 8 }}>Pricing Intelligence</div>
-              {pricingLoading ? (
-                <div style={{ fontSize: 13, color: C.g400 }}>Loading pricing data...</div>
-              ) : (() => {
-                const summary = getPricingSummary(pricingStore, w.id);
-                return summary && summary.submissions > 0 ? (
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>BASE FEE</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.baseFee || 0).toLocaleString()}</div>
+      </CollapsibleSection>
+
+      {/* ════════════════════════════════════════════════════════════════
+         WARRANTY CLAIMS — Linked to this specific roof
+         ════════════════════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 8, marginBottom: 24 }}>
+        {showComingSoon && <ComingSoonToast onClose={() => setShowComingSoon(false)} />}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${C.blue}, #1d4ed8)`, display: "flex", alignItems: "center", justifyContent: "center", color: C.white }}>{Ic.file}</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.navy, fontFamily: F.head }}>Warranty Claims</div>
+              <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{roofClaims.length} claim{roofClaims.length !== 1 ? "s" : ""} filed against this warranty</div>
+            </div>
+          </div>
+        </div>
+
+        {roofClaims.length === 0 ? (
+          <Card style={{ borderLeft: `4px solid ${C.g200}`, textAlign: "center", padding: "32px 20px" }}>
+            <div style={{ color: C.g400, marginBottom: 8 }}>{Ic.shield}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 4 }}>No Claims Filed</div>
+            <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body, marginBottom: 16 }}>This warranty has no claims on record. Claims filed from the Claims tab will appear here.</div>
+          </Card>
+        ) : (
+          <>
+            {/* Active Claims */}
+            {activeClaims.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 8 }}>Active Claims</div>
+                {activeClaims.map(claim => (
+                  <Card key={claim.id} style={{ marginBottom: 10, borderLeft: `4px solid ${C.yellow}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} Claim</div>
+                        <div style={{ fontSize: 12, color: C.g400, marginTop: 2, fontFamily: F.body }}>{claim.desc}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                        <Badge status={claim.status} />
+                      </div>
                     </div>
+
+                    {/* Timeline */}
+                    {claim.timeline && claim.timeline.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 8 }}>Timeline</div>
+                        <div style={{ paddingLeft: 20, borderLeft: `2px solid ${C.g200}` }}>
+                          {claim.timeline.map((e, i) => (
+                            <div key={i} style={{ position: "relative", paddingBottom: i < claim.timeline.length - 1 ? 12 : 0 }}>
+                              <div style={{ position: "absolute", left: -25, top: 4, width: 10, height: 10, borderRadius: 5, background: i === claim.timeline.length - 1 ? C.green : C.white, border: `2px solid ${i === claim.timeline.length - 1 ? C.green : C.g200}` }} />
+                              <div style={{ fontSize: 11, color: C.g400, marginBottom: 2 }}>{fmtDate(e.date)}</div>
+                              <div style={{ fontSize: 12, color: C.navy, lineHeight: 1.4 }}>{e.event}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Resolved Claims */}
+            {resolvedClaims.length > 0 && (
+              <CollapsibleSection title="Resolved Claims" color={C.green} borderColor={C.green} count={resolvedClaims.length} defaultOpen={false}>
+                {resolvedClaims.map(claim => (
+                  <div key={claim.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.g100}` }}>
                     <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>PSF RATE</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.psfFee || 0).toFixed(2)}/sqft</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} — {claim.desc}</div>
+                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body, marginTop: 2 }}>Filed {fmtDate(claim.timeline?.[0]?.date)}</div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>SUBMISSIONS</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{summary.submissions}</div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: claim.status === "approved" ? C.green : C.red, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                      <Badge status={claim.status} />
                     </div>
                   </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body }}>No pricing data yet for this warranty.</div>
+                ))}
+              </CollapsibleSection>
+            )}
+          </>
+        )}
+
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════
+         RECOVERY TRACKER — Amounts covered by others (warranty, tenant, etc.)
+         Claim → Roof → Property → Owner → Account rollup
+         ════════════════════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 8 }}>
+        <Card style={{ borderLeft: `4px solid ${C.green}`, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: C.green }}>{Ic.dollar}</span>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: F.head }}>Recovery Tracker</div>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: totalRecovered > 0 ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(totalRecovered)}</div>
+          </div>
+          <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 16, lineHeight: 1.5 }}>
+            Total amount covered by other responsible parties for this roof — manufacturer warranty claims, tenant back-billing, and third-party recoveries.
+          </div>
+
+          {/* Breakdown by responsible party */}
+          {roofClaims.length > 0 ? (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 10 }}>Recovery Breakdown</div>
+              {roofClaims.filter(c => (c.amount || 0) > 0).map(claim => {
+                const party = claim.status === "approved" ? "Manufacturer Warranty" : claim.status === "in-progress" ? "Pending Review" : claim.status === "denied" ? "Denied" : "Pending";
+                const isApproved = claim.status === "approved" || claim.status === "completed";
+                return (
+                  <div key={claim.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 6, borderRadius: 10, background: isApproved ? C.greenLt : C.g50, border: `1px solid ${isApproved ? C.green + "30" : C.g200}` }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{claim.manufacturer} — {claim.desc}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                        <Badge status={claim.status} />
+                        <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{party}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: isApproved ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                  </div>
                 );
-              })()}
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.head, marginBottom: 8 }}>Submit Pricing</div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <input id="baseFeeInput" type="number" placeholder="Base Fee ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 120 }} />
-                  <input id="psfInput" type="number" placeholder="PSF ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 100 }} />
-                  <button onClick={() => {
-                    const baseEl = document.getElementById("baseFeeInput");
-                    const psfEl = document.getElementById("psfInput");
-                    const baseFee = parseFloat(baseEl?.value) || 0;
-                    const psFee = parseFloat(psfEl?.value) || 0;
-                    if (baseFee > 0 || psFee > 0) {
-                      submitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
-                      if (baseEl) baseEl.value = "";
-                      if (psfEl) psfEl.value = "";
-                    }
-                  }} style={{ padding: "6px 14px", background: C.green, color: C.white, border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer" }}>
-                    Submit
-                  </button>
+              })}
+              {roofClaims.filter(c => (c.amount || 0) > 0).length === 0 && (
+                <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body, textAlign: "center", padding: "12px 0" }}>No recovery amounts recorded yet.</div>
+              )}
+
+              {/* Totals row */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `2px solid ${C.g200}` }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Total Recovered</div>
+                  <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{roofClaims.filter(c => c.status === "approved").length} approved of {roofClaims.length} total claims</div>
                 </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: totalRecovered > 0 ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(totalRecovered)}</div>
               </div>
-            </Card>
+              {pendingRecovery > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#b45309", fontFamily: F.body }}>Pending Recovery</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#b45309", fontFamily: F.head }}>{fmtMoney(pendingRecovery)}</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "12px 0", fontSize: 13, color: C.g400, fontFamily: F.body }}>
+              No claims or recoveries recorded for this roof yet.
+            </div>
+          )}
+        </Card>
+      </div>
     </div>;
-  }
+}
+
+function Warranties({ OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
+  const navigate = useNavigate();
+  const roofs = allRoofs(OWNERS);
+  const allClaimsArr = CLAIMS || [];
+  const dashRecovered = allClaimsArr.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
+  const dashPending = allClaimsArr.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
+
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Warranty Dashboard</h2>
-    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Track coverage, compliance, and inspection schedules</p>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Track coverage, compliance, and recovery across all warranties</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Total Roofs" value={roofs.length} icon={Ic.shield} />
       <KPI label="Active" value={roofs.filter(r=>r.warranty.status==="active").length} icon={Ic.check} />
       <KPI label="At Risk" value={roofs.filter(r=>r.warranty.compliance==="at-risk"||r.warranty.compliance==="expired-inspection").length} icon={Ic.alert} color={C.red} />
+      <KPI label="Total Recovered" value={dashRecovered > 0 ? fmtMoney(dashRecovered) : "$0"} icon={Ic.dollar} color={C.green} sub={dashPending > 0 ? `${fmtMoney(dashPending)} pending` : undefined} />
     </div>
-    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); return <Card key={r.id} onClick={() => setSelectedRoof(r.id)} style={{ marginBottom: 12, cursor: "pointer" }}>
+    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); const rc=(CLAIMS||[]).filter(c=>c.roofId===r.id); const roofRecovered=rc.filter(c=>c.status==="approved"||c.status==="completed").reduce((s,c)=>s+(c.amount||0),0); const roofPending=rc.filter(c=>c.status==="in-progress"||c.status==="review"||c.status==="pending").reduce((s,c)=>s+(c.amount||0),0); return <Card key={r.id} onClick={() => navigate(`/warranties/${r.id}`)} style={{ marginBottom: 12, cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{r.section}</div>
         <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{r.propName} · {r.ownerName}</div></div>
         <Badge status={w.compliance} />
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 12, color: C.g600, fontFamily: F.body }}>
-        <span>{w.manufacturer} {w.wType}</span><span>{r.type} · {r.sqFt.toLocaleString()} sqft</span>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
+        <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{w.wType} · {r.sqFt.toLocaleString()} sqft</div>
       </div>
       <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: C.g100, overflow: "hidden" }}>
         <div style={{ width: `${p}%`, height: "100%", borderRadius: 3, background: p > 75 ? C.yellow : C.green }} />
       </div>
+      {(roofRecovered > 0 || roofPending > 0) && <div style={{ display: "flex", gap: 12, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.g100}` }}>
+        {roofRecovered > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head }}>{Ic.dollar} {fmtMoney(roofRecovered)} recovered</div>}
+        {roofPending > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: "#b45309", fontFamily: F.head }}>{Ic.clock} {fmtMoney(roofPending)} pending</div>}
+        <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{rc.length} claim{rc.length!==1?"s":""}</div>
+      </div>}
     </Card>; })}
   </div>;
 }
 
-function AccessLog() {
+function AccessLog({ ACCESS_LOGS, OWNERS, onAdd }) {
   return <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Roof Access Log</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>QR-based tracking of everyone who goes on the roof</p></div>
-      <Btn primary>{Ic.qr} Generate QR Code</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Log Access</Btn>
     </div>
-    {ACCESS_LOGS.map(log => { const r=findRoof(log.roofId); const isU=log.person==="Unknown"; return <Card key={log.id} style={{ marginBottom: 10, borderLeft: isU ? `4px solid ${C.red}` : `4px solid ${C.g200}` }}>
+    {(ACCESS_LOGS || []).map(log => { const r=findRoof(OWNERS, log.roofId); const isU=log.person==="Unknown"; return <Card key={log.id} style={{ marginBottom: 10, borderLeft: isU ? `4px solid ${C.red}` : `4px solid ${C.g200}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><span style={{ fontSize: 14, fontWeight: 700, color: isU ? C.red : C.navy, fontFamily: F.head }}>{log.person}</span>
         {isU && <Badge status="overdue" label="Unauthorized" />}
@@ -979,23 +2156,27 @@ function AccessLog() {
   </div>;
 }
 
-function InvoicesTab() {
-  const flagged = INVOICES.filter(i => i.flagged);
+function InvoicesTab({ INVOICES, OWNERS, onAdd }) {
+  const invoices = INVOICES || [];
+  const flagged = invoices.filter(i => i.flagged);
   const potentialRecovery = flagged.reduce((s, i) => s + i.amount, 0);
   return <div>
-    <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Invoice Tracker</h2>
-    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Upload, tag, and flag invoices against warranty coverage</p>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+      <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Invoice Tracker</h2>
+      <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: 0 }}>Upload, tag, and flag invoices against warranty coverage</p></div>
+      <Btn primary onClick={onAdd}>{Ic.plus} Create Invoice</Btn>
+    </div>
     {potentialRecovery > 0 && <div style={{ background: C.yellowBg, border: `1.5px solid ${C.yellowBdr}`, borderRadius: 14, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
       <span style={{ color: C.yellow }}>{Ic.alert}</span>
       <div><div style={{ fontSize: 14, fontWeight: 700, color: "#92400e", fontFamily: F.head }}>Potential Warranty Recovery: {fmtMoney(potentialRecovery)}</div>
       <div style={{ fontSize: 12, color: "#b45309" }}>{flagged.length} invoices flagged for review</div></div>
     </div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Total Invoices" value={INVOICES.length} icon={Ic.file} />
+      <KPI label="Total Invoices" value={invoices.length} icon={Ic.file} />
       <KPI label="Flagged" value={flagged.length} icon={Ic.flag} color={C.yellow} />
       <KPI label="Potential Recovery" value={fmtMoney(potentialRecovery)} icon={Ic.dollar} color={C.green} />
     </div>
-    {INVOICES.map(inv => { const r=findRoof(inv.roofId); return <Card key={inv.id} style={{ marginBottom: 10, borderLeft: inv.flagged ? `4px solid ${C.yellow}` : `4px solid ${C.g200}` }}>
+    {invoices.map(inv => { const r=findRoof(OWNERS, inv.roofId); return <Card key={inv.id} style={{ marginBottom: 10, borderLeft: inv.flagged ? `4px solid ${C.yellow}` : `4px solid ${C.g200}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{inv.vendor}</div>
         <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{inv.desc}</div></div>
@@ -1009,21 +2190,22 @@ function InvoicesTab() {
   </div>;
 }
 
-function InspectionsTab() {
-  const upcoming = INSPECTIONS.filter(i => i.status === "scheduled" || i.status === "overdue");
-  const completed = INSPECTIONS.filter(i => i.status === "completed");
+function InspectionsTab({ INSPECTIONS, OWNERS, onAdd }) {
+  const inspections = INSPECTIONS || [];
+  const upcoming = inspections.filter(i => i.status === "scheduled" || i.status === "overdue");
+  const completed = inspections.filter(i => i.status === "completed");
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Inspection Manager</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Schedule, track, and document warranty-required inspections</p></div>
-      <Btn primary>{Ic.plus} Schedule Inspection</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Schedule Inspection</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Upcoming" value={upcoming.length} icon={Ic.cal} color={C.blue} />
-      <KPI label="Overdue" value={INSPECTIONS.filter(i=>i.status==="overdue").length} icon={Ic.alert} color={C.red} />
+      <KPI label="Overdue" value={inspections.filter(i=>i.status==="overdue").length} icon={Ic.alert} color={C.red} />
       <KPI label="Completed" value={completed.length} icon={Ic.check} />
     </div>
-    {upcoming.map(insp => { const r=findRoof(insp.roofId); const days=daysTo(insp.date); return <Card key={insp.id} style={{ marginBottom: 10, borderLeft: insp.status==="overdue" ? `4px solid ${C.red}` : `4px solid ${C.blue}` }}>
+    {upcoming.map(insp => { const r=findRoof(OWNERS, insp.roofId); const days=daysTo(insp.date); return <Card key={insp.id} style={{ marginBottom: 10, borderLeft: insp.status==="overdue" ? `4px solid ${C.red}` : `4px solid ${C.blue}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{insp.type}</div>
         {r && <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{r.section} · {r.propName}</div>}</div>
@@ -1031,7 +2213,7 @@ function InspectionsTab() {
       </div>
       <div style={{ fontSize: 12, color: C.g600, marginTop: 8 }}>{insp.notes}</div>
     </Card>; })}
-    {completed.map(insp => { const r=findRoof(insp.roofId); return <Card key={insp.id} style={{ marginBottom: 10 }}>
+    {completed.map(insp => { const r=findRoof(OWNERS, insp.roofId); return <Card key={insp.id} style={{ marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{insp.type}</div>
         {r && <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{r.section} · {r.propName}</div>}
@@ -1048,20 +2230,21 @@ function InspectionsTab() {
   </div>;
 }
 
-function ClaimsTab() {
-  const recovered = CLAIMS.filter(c=>c.status==="approved").reduce((s,c)=>s+c.amount,0);
+function ClaimsTab({ CLAIMS, OWNERS, onAdd }) {
+  const claims = CLAIMS || [];
+  const recovered = claims.filter(c=>c.status==="approved").reduce((s,c)=>s+c.amount,0);
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Warranty Claims</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Initiate, track, and resolve manufacturer warranty claims</p></div>
-      <Btn primary>{Ic.plus} File Claim</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} File Claim</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Total Claims" value={CLAIMS.length} icon={Ic.file} />
-      <KPI label="In Progress" value={CLAIMS.filter(c=>c.status==="in-progress").length} icon={Ic.clock} color={C.blue} />
+      <KPI label="Total Claims" value={claims.length} icon={Ic.file} />
+      <KPI label="In Progress" value={claims.filter(c=>c.status==="in-progress").length} icon={Ic.clock} color={C.blue} />
       <KPI label="Recovered" value={fmtMoney(recovered)} icon={Ic.dollar} color={C.green} />
     </div>
-    {CLAIMS.map(claim => { const r=findRoof(claim.roofId); return <Card key={claim.id} style={{ marginBottom: 16 }}>
+    {claims.map(claim => { const r=findRoof(OWNERS, claim.roofId); return <Card key={claim.id} style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
         <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} Claim</div>
         <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{claim.desc}</div>
@@ -1080,6 +2263,165 @@ function ClaimsTab() {
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  GUIDED TOUR — Interactive walkthrough for first-time users
+// ══════════════════════════════════════════════════════════════════════
+
+const TOUR_STEPS = [
+  {
+    title: "Welcome to Roof MRI Warranty Manager",
+    description: "This platform helps you manage commercial roof warranties, track inspections, file claims, and protect your roofing investments. Let's take a quick tour to get you started!",
+    position: "center",
+    icon: Ic.shield,
+  },
+  {
+    title: "Accounts Tab",
+    description: "This is your client database. Here you'll manage building owners, their properties, and individual roof sections. Each roof can have warranties, inspections, and claims attached to it. Click '+ Add Owner' to start building your portfolio.",
+    targetTab: "accounts",
+    position: "below-tabs",
+    icon: Ic.building,
+  },
+  {
+    title: "Warranties Tab",
+    description: "Browse and compare over 200+ manufacturer warranties from top brands like GAF, Carlisle, Sika Sarnafil, and more. Select a roof from your accounts to see its active warranties, coverage details, and expiration timelines.",
+    targetTab: "warranties",
+    position: "below-tabs",
+    icon: Ic.shield,
+  },
+  {
+    title: "Access Log",
+    description: "Track every time someone accesses a roof. Log contractor visits, inspections, emergency access, and unauthorized entries. This creates an audit trail that's essential for warranty compliance.",
+    targetTab: "access",
+    position: "below-tabs",
+    icon: Ic.qr,
+  },
+  {
+    title: "Invoices",
+    description: "Upload and manage roofing invoices. Flag invoices that may affect warranty coverage, track payments, and keep a complete financial record tied to each property and roof section.",
+    targetTab: "invoices",
+    position: "below-tabs",
+    icon: Ic.dollar,
+  },
+  {
+    title: "Inspections",
+    description: "Schedule and track required warranty inspections. Many manufacturer warranties require periodic inspections to stay valid. This tab helps you never miss a deadline and keeps your warranties active.",
+    targetTab: "inspections",
+    position: "below-tabs",
+    icon: Ic.cal,
+  },
+  {
+    title: "Claims",
+    description: "File and track warranty claims with manufacturers. Follow the full lifecycle from filing to resolution, with timeline tracking for every event. See exactly how much you've recovered for your clients.",
+    targetTab: "claims",
+    position: "below-tabs",
+    icon: Ic.file,
+  },
+  {
+    title: "Warranty Analyzer",
+    description: "The green button in the bottom-right corner opens the Warranty Analyzer — a powerful tool that lets you compare warranties side-by-side, get AI-powered recommendations, and find the best coverage for any roof type.",
+    position: "bottom-right",
+    icon: Ic.zap,
+  },
+  {
+    title: "Placeholder Data",
+    description: "We've loaded sample data so you can see the platform in action. When you're ready to start with your own clients, use the yellow banner to clear the placeholder data — or keep it as reference examples.",
+    position: "center",
+    icon: Ic.layers,
+  },
+  {
+    title: "You're All Set!",
+    description: "You're ready to start managing warranties like a pro. If you ever need to see this tour again, click the '?' help button in the top navigation bar. Happy managing!",
+    position: "center",
+    icon: Ic.check,
+  },
+];
+
+function GuidedTour({ open, onClose }) {
+  const navigate = useNavigate();
+  const [step, setStep] = useState(0);
+  const total = TOUR_STEPS.length;
+  const current = TOUR_STEPS[step];
+
+  const TAB_TO_PATH = { accounts: "/accounts", warranties: "/warranties", access: "/access", invoices: "/invoices", inspections: "/inspections", claims: "/claims" };
+
+  useEffect(() => {
+    if (open && current.targetTab) {
+      navigate(TAB_TO_PATH[current.targetTab] || `/${current.targetTab}`);
+    }
+  }, [step, open]);
+
+  if (!open) return null;
+
+  const next = () => { if (step < total - 1) setStep(step + 1); else onClose(); };
+  const prev = () => { if (step > 0) setStep(step - 1); };
+  const skip = () => { onClose(); };
+
+  // Position the tooltip based on step type
+  const getTooltipStyle = () => {
+    const base = {
+      background: C.white, borderRadius: 20, padding: "32px 28px", maxWidth: 480, width: "90vw",
+      boxShadow: "0 20px 60px rgba(30,44,85,0.25)", position: "relative", zIndex: 10001,
+      animation: "tourFadeIn 0.3s ease",
+    };
+    if (current.position === "center") {
+      return { ...base, margin: "auto" };
+    }
+    if (current.position === "below-tabs") {
+      return { ...base, margin: "0 auto", marginTop: 120 };
+    }
+    if (current.position === "bottom-right") {
+      return { ...base, position: "fixed", bottom: 90, right: 24, zIndex: 10001, margin: 0 };
+    }
+    return base;
+  };
+
+  return (
+    <>
+      <style>{`
+        @keyframes tourFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes tourPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0,189,112,0.4); } 50% { box-shadow: 0 0 0 12px rgba(0,189,112,0); } }
+      `}</style>
+      <div onClick={skip} style={{ position: "fixed", inset: 0, background: "rgba(30,44,85,0.65)", zIndex: 10000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: current.position === "center" ? "20vh" : 0 }}>
+        <div onClick={e => e.stopPropagation()} style={getTooltipStyle()}>
+          {/* Step icon */}
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: `linear-gradient(135deg, ${C.green}, ${C.greenDk})`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, color: C.white, animation: "tourPulse 2s infinite" }}>
+            {current.icon}
+          </div>
+
+          {/* Step indicator */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+            {TOUR_STEPS.map((_, i) => (
+              <div key={i} style={{ width: i === step ? 24 : 8, height: 4, borderRadius: 2, background: i === step ? C.green : i < step ? C.greenLt : C.g200, transition: "all 0.3s ease" }} />
+            ))}
+          </div>
+
+          {/* Content */}
+          <h3 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 8px" }}>{current.title}</h3>
+          <p style={{ fontSize: 14, color: C.g600, fontFamily: F.body, lineHeight: 1.7, margin: "0 0 24px" }}>{current.description}</p>
+
+          {/* Navigation */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={skip} style={{ background: "none", border: "none", color: C.g400, fontSize: 13, cursor: "pointer", fontFamily: F.body, fontWeight: 500 }}>Skip Tour</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {step > 0 && (
+                <button onClick={prev} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 13, fontWeight: 600, fontFamily: F.head, color: C.navy, cursor: "pointer" }}>Back</button>
+              )}
+              <button onClick={next} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, color: C.white, cursor: "pointer" }}>
+                {step === total - 1 ? "Get Started" : `Next (${step + 1}/${total})`}
+              </button>
+            </div>
+          </div>
+
+          {/* Step counter */}
+          <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, color: C.g400, fontFamily: F.body }}>
+            Step {step + 1} of {total}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const TABS = [
   { id: "accounts", label: "Accounts", icon: Ic.building },
   { id: "warranties", label: "Warranties", icon: Ic.shield },
@@ -1090,14 +2432,219 @@ const TABS = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("accounts");
-  const [selectedRoof, setSelectedRoof] = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive current tab from URL path
+  const pathSegment = location.pathname.split("/")[1] || "accounts";
+  const TAB_IDS = ["accounts", "warranties", "access", "invoices", "inspections", "claims"];
+  const tab = TAB_IDS.includes(pathSegment) ? pathSegment : "accounts";
+
+  // ── Auth State ──
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
-  const onSelectRoof = (roofId) => { setSelectedRoof(roofId); setTab("warranties"); };
+
+  // ── Tour State ──
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // ── Modal State ──
+  const [addOwnerOpen, setAddOwnerOpen] = useState(false);
+  const [fileClaimOpen, setFileClaimOpen] = useState(false);
+  const [scheduleInspOpen, setScheduleInspOpen] = useState(false);
+  const [logAccessOpen, setLogAccessOpen] = useState(false);
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+
+  // ── API State ──
+  const [owners, setOwners] = useState([]);
+  const [warrantyDb, setWarrantyDb] = useState([]);
+  const [pricingStore, setPricingStore] = useState({});
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [accessLogs, setAccessLogs] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [inspections, setInspections] = useState([]);
+  const [claims, setClaims] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [hasDemoData, setHasDemoData] = useState(false);
+  const [clearingDemo, setClearingDemo] = useState(false);
+  // Set this to a YouTube/Vimeo embed URL when a walkthrough video is recorded
+  const [videoUrl] = useState(""); // e.g. "https://www.youtube.com/embed/VIDEO_ID"
+
+  // Check for existing auth token on mount, or handle OAuth callback
+  const [oauthError, setOauthError] = useState("");
+  const [passwordResetToken, setPasswordResetToken] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthToken = params.get("auth_token");
+    const oauthErr = params.get("auth_error");
+    const resetTok = params.get("reset_token");
+
+    // Clean up URL params from OAuth redirect or password reset
+    if (oauthToken || oauthErr || resetTok) {
+      navigate(window.location.pathname, { replace: true });
+    }
+
+    if (resetTok) {
+      setPasswordResetToken(resetTok);
+      setAuthChecked(true);
+      return;
+    }
+
+    if (oauthErr) {
+      setOauthError(oauthErr);
+      setAuthChecked(true);
+      return;
+    }
+
+    if (oauthToken) {
+      localStorage.setItem("auth_token", oauthToken);
+      getMe().then(res => { setUser(res.user); setAuthChecked(true); })
+        .catch((err) => {
+          console.error("[OAuth] getMe failed after Google login:", err);
+          // Fallback: decode the JWT payload to get basic user info for the UI.
+          // The token is still stored and will be verified server-side on each API call.
+          try {
+            const payload = JSON.parse(atob(oauthToken.split(".")[1]));
+            setUser({ id: payload.id, email: payload.email, firstName: payload.firstName, lastName: payload.lastName });
+            setAuthChecked(true);
+          } catch (decodeErr) {
+            localStorage.removeItem("auth_token");
+            setOauthError("Login succeeded but failed to load your profile. Please try again.");
+            setAuthChecked(true);
+          }
+        });
+    } else {
+      const token = localStorage.getItem("auth_token");
+      if (token) {
+        getMe().then(res => { setUser(res.user); setAuthChecked(true); })
+          .catch(() => { localStorage.removeItem("auth_token"); setAuthChecked(true); });
+      } else {
+        setAuthChecked(true);
+      }
+    }
+  }, []);
+
+  const handleAuth = (userData) => {
+    setUser(userData);
+    // Show tour for first-time users
+    if (!localStorage.getItem("tour_completed")) {
+      setTimeout(() => setTourOpen(true), 800);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("auth_token");
+    setUser(null);
+  };
+
+  const handleClearDemoData = async () => {
+    if (!window.confirm("Are you sure you want to clear all placeholder data? This cannot be undone. Your real data (if any) will not be affected.")) return;
+    setClearingDemo(true);
+    try {
+      await clearDemoData();
+      setHasDemoData(false);
+      await loadAll();
+    } catch (err) {
+      alert("Failed to clear demo data: " + err.message);
+    } finally {
+      setClearingDemo(false);
+    }
+  };
+
+  const handleConvertToExamples = async () => {
+    if (!window.confirm("This will rename all sample data to clearly labeled examples (e.g. 'Example Property: Riverside Medical Center'). Continue?")) return;
+    setClearingDemo(true);
+    try {
+      await convertToExamples();
+      setHasDemoData(false);
+      await loadAll();
+    } catch (err) {
+      alert("Failed to convert to examples: " + err.message);
+    } finally {
+      setClearingDemo(false);
+    }
+  };
+
+  const loadAll = useCallback(() => {
+    return Promise.all([
+      fetchAccounts().catch(() => []),
+      fetchWarrantyDb().catch(() => []),
+      fetchPricingStore().catch(() => ({})),
+      fetchAccessLogs().catch(() => []),
+      fetchInvoices().catch(() => []),
+      fetchInspections().catch(() => []),
+      fetchClaims().catch(() => []),
+      checkDemoData().catch(() => ({ hasDemoData: false })),
+    ]).then(([acc, wdb, pricing, logs, inv, insp, cl, demo]) => {
+      setOwners(acc);
+      setWarrantyDb(wdb);
+      setPricingStore(pricing);
+      setAccessLogs(logs);
+      setInvoices(inv);
+      setInspections(insp);
+      setClaims(cl);
+      setHasDemoData(demo.hasDemoData);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
+
+  // Targeted refresh functions
+  const refreshAccounts = useCallback(() => fetchAccounts().catch(() => []).then(setOwners), []);
+  const refreshClaims = useCallback(() => fetchClaims().catch(() => []).then(setClaims), []);
+  const refreshInspections = useCallback(() => fetchInspections().catch(() => []).then(setInspections), []);
+  const refreshAccessLogs = useCallback(() => fetchAccessLogs().catch(() => []).then(setAccessLogs), []);
+  const refreshInvoices = useCallback(() => fetchInvoices().catch(() => []).then(setInvoices), []);
+
+  const onSelectRoof = (roofId) => { navigate(`/warranties/${roofId}`); };
+
+  // ── Auth check loading ──
+  if (!authChecked) return (
+    <div style={{ minHeight: "100vh", background: C.g50, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+        </div>
+        <div style={{ fontSize: 14, color: C.g600, fontFamily: F.body }}>Loading...</div>
+      </div>
+    </div>
+  );
+
+  // ── Show auth screen if not logged in ──
+  if (!user) return (
+    <>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <AuthScreen onAuth={handleAuth} oauthError={oauthError} initialResetToken={passwordResetToken} />
+    </>
+  );
+
+  // ── Data loading ──
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: C.g50, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+        </div>
+        <div style={{ fontSize: 14, color: C.g600, fontFamily: F.body }}>Loading Warranty Manager...</div>
+      </div>
+    </div>
+  );
+
+  const displayName = user.companyName || `${user.firstName} ${user.lastName}`;
+
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} />
-    <div style={{ background: C.navy, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
+    <GuidedTour open={tourOpen} onClose={() => { setTourOpen(false); localStorage.setItem("tour_completed", "true"); }} />
+    <AddOwnerModal open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} />
+    <FileClaimModal open={fileClaimOpen} onClose={() => setFileClaimOpen(false)} onSaved={refreshClaims} OWNERS={owners} />
+    <ScheduleInspectionModal open={scheduleInspOpen} onClose={() => setScheduleInspOpen(false)} onSaved={refreshInspections} OWNERS={owners} />
+    <LogAccessModal open={logAccessOpen} onClose={() => setLogAccessOpen(false)} onSaved={refreshAccessLogs} OWNERS={owners} />
+    <CreateInvoiceModal open={createInvoiceOpen} onClose={() => setCreateInvoiceOpen(false)} onSaved={refreshInvoices} OWNERS={owners} />
+    <div style={{ background: C.navy, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 14 }}>MRI</span>
@@ -1105,18 +2652,70 @@ export default function App() {
         <div><div style={{ fontSize: 14, fontWeight: 800, color: C.white, fontFamily: F.head }}>Warranty Manager</div>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontFamily: F.body }}>Roof MRI Certified Platform</div></div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{Ic.user} <span>Riverland Roofing</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{Ic.user} <span>{displayName}</span></div>
+        <button onClick={() => setTourOpen(true)} title="Take a tour" style={{ background: "none", border: `1px solid rgba(255,255,255,0.2)`, borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.6)", fontSize: 13, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>?</button>
+        <button onClick={handleLogout} style={{ background: "none", border: `1px solid rgba(255,255,255,0.2)`, borderRadius: 8, padding: "5px 12px", color: "rgba(255,255,255,0.6)", fontSize: 11, fontFamily: F.body, cursor: "pointer" }}>Sign Out</button>
+      </div>
     </div>
-    <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 16px" }}>
-      {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
+    <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
+      {TABS.map(t => <button key={t.id} onClick={() => { navigate(`/${t.id}`); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px" }}>
-      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} />}
-      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} />}
-      {tab === "access" && <AccessLog />}
-      {tab === "invoices" && <InvoicesTab />}
-      {tab === "inspections" && <InspectionsTab />}
-      {tab === "claims" && <ClaimsTab />}
+    {hasDemoData && <div style={{ margin: "0 32px", marginTop: 16 }}>
+      {/* Welcome banner with demo data options */}
+      <div style={{ padding: "20px 24px", borderRadius: 14, background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, color: C.white, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, fontFamily: F.head, marginBottom: 6 }}>Welcome to Your Warranty Manager</div>
+            <div style={{ fontSize: 13, opacity: 0.8, fontFamily: F.body, lineHeight: 1.6 }}>
+              We've loaded sample data so you can explore the platform. You have three options:
+            </div>
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.green, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.check}</span>
+                <span><strong>Take the Tour</strong> — Learn what each section does</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.blue, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.layers}</span>
+                <span><strong>Keep as Examples</strong> — Convert sample data to labeled examples</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: F.body }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: C.yellow, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.x}</span>
+                <span><strong>Clear Data</strong> — Start fresh with a blank slate</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button onClick={() => setTourOpen(true)} style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: C.green, color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{Ic.target} Take the Tour</button>
+            <button onClick={handleConvertToExamples} disabled={clearingDemo} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid rgba(255,255,255,0.3)`, background: "transparent", color: C.white, fontSize: 13, fontWeight: 600, fontFamily: F.head, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{Ic.layers} Keep as Examples</button>
+            <button onClick={handleClearDemoData} disabled={clearingDemo} style={{ padding: "10px 20px", borderRadius: 10, border: `1.5px solid rgba(255,255,255,0.2)`, background: "transparent", color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 600, fontFamily: F.head, cursor: clearingDemo ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", opacity: clearingDemo ? 0.6 : 1 }}>{clearingDemo ? "Clearing..." : "Clear All Data"}</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Video walkthrough section */}
+      {videoUrl && <div style={{ padding: "16px 20px", borderRadius: 12, background: C.white, border: `1.5px solid ${C.g200}`, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ color: C.blue }}>{Ic.target}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Watch: Platform Walkthrough from the Developer</span>
+        </div>
+        <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 10, overflow: "hidden", background: C.g100 }}>
+          <iframe src={videoUrl} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Platform Walkthrough" />
+        </div>
+      </div>}
+    </div>}
+    <div style={{ padding: "24px 32px" }}>
+      <Routes>
+        <Route path="/" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="/accounts" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="/warranties" element={<Warranties OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
+        <Route path="/warranties/:roofId" element={<WarrantyDetail OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
+        <Route path="/access" element={<AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />} />
+        <Route path="/invoices" element={<InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />} />
+        <Route path="/inspections" element={<InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />} />
+        <Route path="/claims" element={<ClaimsTab CLAIMS={claims} OWNERS={owners} onAdd={() => setFileClaimOpen(true)} />} />
+        <Route path="*" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+      </Routes>
     </div>
     <button onClick={() => setAnalyzerOpen(true)} style={{ position: "fixed", bottom: 24, right: 24, display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderRadius: 16, background: C.green, border: "none", color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", boxShadow: `0 4px 20px ${C.green}50`, zIndex: 100 }}>{Ic.zap} Warranty Analyzer</button>
   </div>;
