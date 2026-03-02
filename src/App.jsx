@@ -1,5 +1,6 @@
 import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData, requestPasswordReset, resetPassword, convertToExamples } from "./api";
 import { useState, useEffect, useCallback } from "react";
+import { Routes, Route, useNavigate, useLocation, useParams } from "react-router-dom";
 
 /* ═══════════════════════════════════════════════════════════════════
    ROOF WARRANTY MANAGEMENT APP — Roof MRI Branded
@@ -1769,7 +1770,9 @@ function CreateInvoiceModal({ open, onClose, onSaved, OWNERS }) {
   );
 }
 
-function Accounts({ onSelectRoof, OWNERS, CLAIMS, onAdd }) {
+function Accounts({ OWNERS, CLAIMS, onAdd }) {
+  const navigate = useNavigate();
+  const onSelectRoof = (roofId) => navigate(`/warranties/${roofId}`);
   const [q, setQ] = useState("");
   const [exp, setExp] = useState({});
   const toggle = (id) => setExp(p => ({ ...p, [id]: !p[id] }));
@@ -1901,23 +1904,24 @@ function ComingSoonToast({ onClose }) {
   );
 }
 
-function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
-  const roofs = allRoofs(OWNERS);
+function WarrantyDetail({ OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
+  const { roofId } = useParams();
+  const navigate = useNavigate();
+  const selectedRoof = roofId;
   const [showComingSoon, setShowComingSoon] = useState(true);
-  if (selectedRoof) {
-    const r = findRoof(OWNERS, selectedRoof);
-    if (!r) return null;
-    const w = r.warranty;
-    const p = pctUsed(w.start, w.end);
-    const days = daysTo(w.nextInsp);
-    const roofClaims = (CLAIMS || []).filter(c => c.roofId === selectedRoof);
-    const activeClaims = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending");
-    const resolvedClaims = roofClaims.filter(c => c.status === "approved" || c.status === "completed" || c.status === "denied");
-    const totalRecovered = roofClaims.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
-    const pendingRecovery = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
+  const r = findRoof(OWNERS, selectedRoof);
+  if (!r) return null;
+  const w = r.warranty;
+  const p = pctUsed(w.start, w.end);
+  const days = daysTo(w.nextInsp);
+  const roofClaims = (CLAIMS || []).filter(c => c.roofId === selectedRoof);
+  const activeClaims = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending");
+  const resolvedClaims = roofClaims.filter(c => c.status === "approved" || c.status === "completed" || c.status === "denied");
+  const totalRecovered = roofClaims.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
+  const pendingRecovery = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
 
-    return <div>
-      <button onClick={() => setSelectedRoof(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
+  return <div>
+    <button onClick={() => navigate("/warranties")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>{r.section}</h2>
       <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 8 }}>{r.propName} · {r.propAddr}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
@@ -2092,7 +2096,11 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
         </Card>
       </div>
     </div>;
-  }
+}
+
+function Warranties({ OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
+  const navigate = useNavigate();
+  const roofs = allRoofs(OWNERS);
   const allClaimsArr = CLAIMS || [];
   const dashRecovered = allClaimsArr.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
   const dashPending = allClaimsArr.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
@@ -2106,7 +2114,7 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
       <KPI label="At Risk" value={roofs.filter(r=>r.warranty.compliance==="at-risk"||r.warranty.compliance==="expired-inspection").length} icon={Ic.alert} color={C.red} />
       <KPI label="Total Recovered" value={dashRecovered > 0 ? fmtMoney(dashRecovered) : "$0"} icon={Ic.dollar} color={C.green} sub={dashPending > 0 ? `${fmtMoney(dashPending)} pending` : undefined} />
     </div>
-    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); const rc=(CLAIMS||[]).filter(c=>c.roofId===r.id); const roofRecovered=rc.filter(c=>c.status==="approved"||c.status==="completed").reduce((s,c)=>s+(c.amount||0),0); const roofPending=rc.filter(c=>c.status==="in-progress"||c.status==="review"||c.status==="pending").reduce((s,c)=>s+(c.amount||0),0); return <Card key={r.id} onClick={() => setSelectedRoof(r.id)} style={{ marginBottom: 12, cursor: "pointer" }}>
+    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); const rc=(CLAIMS||[]).filter(c=>c.roofId===r.id); const roofRecovered=rc.filter(c=>c.status==="approved"||c.status==="completed").reduce((s,c)=>s+(c.amount||0),0); const roofPending=rc.filter(c=>c.status==="in-progress"||c.status==="review"||c.status==="pending").reduce((s,c)=>s+(c.amount||0),0); return <Card key={r.id} onClick={() => navigate(`/warranties/${r.id}`)} style={{ marginBottom: 12, cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{r.section}</div>
         <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{r.propName} · {r.ownerName}</div></div>
@@ -2328,14 +2336,17 @@ const TOUR_STEPS = [
   },
 ];
 
-function GuidedTour({ open, onClose, onTabChange }) {
+function GuidedTour({ open, onClose }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const total = TOUR_STEPS.length;
   const current = TOUR_STEPS[step];
 
+  const TAB_TO_PATH = { accounts: "/accounts", warranties: "/warranties", access: "/access", invoices: "/invoices", inspections: "/inspections", claims: "/claims" };
+
   useEffect(() => {
-    if (open && current.targetTab && onTabChange) {
-      onTabChange(current.targetTab);
+    if (open && current.targetTab) {
+      navigate(TAB_TO_PATH[current.targetTab] || `/${current.targetTab}`);
     }
   }, [step, open]);
 
@@ -2421,12 +2432,18 @@ const TABS = [
 ];
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive current tab from URL path
+  const pathSegment = location.pathname.split("/")[1] || "accounts";
+  const TAB_IDS = ["accounts", "warranties", "access", "invoices", "inspections", "claims"];
+  const tab = TAB_IDS.includes(pathSegment) ? pathSegment : "accounts";
+
   // ── Auth State ──
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  const [tab, setTab] = useState("accounts");
-  const [selectedRoof, setSelectedRoof] = useState(null);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
 
   // ── Tour State ──
@@ -2466,7 +2483,7 @@ export default function App() {
 
     // Clean up URL params from OAuth redirect or password reset
     if (oauthToken || oauthErr || resetTok) {
-      window.history.replaceState({}, "", window.location.pathname);
+      navigate(window.location.pathname, { replace: true });
     }
 
     if (resetTok) {
@@ -2582,7 +2599,7 @@ export default function App() {
   const refreshAccessLogs = useCallback(() => fetchAccessLogs().catch(() => []).then(setAccessLogs), []);
   const refreshInvoices = useCallback(() => fetchInvoices().catch(() => []).then(setInvoices), []);
 
-  const onSelectRoof = (roofId) => { setSelectedRoof(roofId); setTab("warranties"); };
+  const onSelectRoof = (roofId) => { navigate(`/warranties/${roofId}`); };
 
   // ── Auth check loading ──
   if (!authChecked) return (
@@ -2621,7 +2638,7 @@ export default function App() {
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
-    <GuidedTour open={tourOpen} onClose={() => { setTourOpen(false); localStorage.setItem("tour_completed", "true"); }} onTabChange={setTab} />
+    <GuidedTour open={tourOpen} onClose={() => { setTourOpen(false); localStorage.setItem("tour_completed", "true"); }} />
     <AddOwnerModal open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} />
     <FileClaimModal open={fileClaimOpen} onClose={() => setFileClaimOpen(false)} onSaved={refreshClaims} OWNERS={owners} />
     <ScheduleInspectionModal open={scheduleInspOpen} onClose={() => setScheduleInspOpen(false)} onSaved={refreshInspections} OWNERS={owners} />
@@ -2642,7 +2659,7 @@ export default function App() {
       </div>
     </div>
     <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
-      {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
+      {TABS.map(t => <button key={t.id} onClick={() => { navigate(`/${t.id}`); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
     {hasDemoData && <div style={{ margin: "0 32px", marginTop: 16 }}>
       {/* Welcome banner with demo data options */}
@@ -2688,12 +2705,17 @@ export default function App() {
       </div>}
     </div>}
     <div style={{ padding: "24px 32px" }}>
-      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />}
-      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />}
-      {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />}
-      {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />}
-      {tab === "inspections" && <InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />}
-      {tab === "claims" && <ClaimsTab CLAIMS={claims} OWNERS={owners} onAdd={() => setFileClaimOpen(true)} />}
+      <Routes>
+        <Route path="/" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="/accounts" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="/warranties" element={<Warranties OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
+        <Route path="/warranties/:roofId" element={<WarrantyDetail OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
+        <Route path="/access" element={<AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />} />
+        <Route path="/invoices" element={<InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />} />
+        <Route path="/inspections" element={<InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />} />
+        <Route path="/claims" element={<ClaimsTab CLAIMS={claims} OWNERS={owners} onAdd={() => setFileClaimOpen(true)} />} />
+        <Route path="*" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+      </Routes>
     </div>
     <button onClick={() => setAnalyzerOpen(true)} style={{ position: "fixed", bottom: 24, right: 24, display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderRadius: 16, background: C.green, border: "none", color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", boxShadow: `0 4px 20px ${C.green}50`, zIndex: 100 }}>{Ic.zap} Warranty Analyzer</button>
   </div>;
