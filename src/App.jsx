@@ -1769,50 +1769,86 @@ function CreateInvoiceModal({ open, onClose, onSaved, OWNERS }) {
   );
 }
 
-function Accounts({ onSelectRoof, OWNERS, onAdd }) {
+function Accounts({ onSelectRoof, OWNERS, CLAIMS, onAdd }) {
   const [q, setQ] = useState("");
   const [exp, setExp] = useState({});
   const toggle = (id) => setExp(p => ({ ...p, [id]: !p[id] }));
   const owners = OWNERS || [];
+  const allClaims = CLAIMS || [];
   const fil = q ? owners.filter(o => o.name.toLowerCase().includes(q.toLowerCase()) || o.properties.some(p => p.name.toLowerCase().includes(q.toLowerCase()))) : owners;
   const compDot = (c) => {
     const col = c === "current" ? C.green : c === "at-risk" ? C.yellow : C.red;
     return <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, display: "inline-block" }} />;
   };
+
+  // Compute rollup totals
+  const getRoofIds = (props) => props.flatMap(p => p.roofs.map(r => r.id));
+  const getRecovered = (roofIds) => allClaims.filter(c => roofIds.includes(c.roofId) && (c.status === "approved" || c.status === "completed")).reduce((s, c) => s + (c.amount || 0), 0);
+  const getPending = (roofIds) => allClaims.filter(c => roofIds.includes(c.roofId) && (c.status === "in-progress" || c.status === "review" || c.status === "pending")).reduce((s, c) => s + (c.amount || 0), 0);
+
+  const allRoofIds = owners.flatMap(o => getRoofIds(o.properties));
+  const totalRecovered = getRecovered(allRoofIds);
+  const totalPending = getPending(allRoofIds);
+
   return <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Account Management</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Manage owners, property managers, and building portfolios</p></div>
       <Btn primary onClick={onAdd}>{Ic.plus} Add Owner</Btn>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Owners" value={owners.length} icon={Ic.user} />
       <KPI label="Properties" value={owners.reduce((s,o)=>s+o.properties.length,0)} icon={Ic.building} color={C.navy} />
       <KPI label="Roof Sections" value={owners.reduce((s,o)=>s+o.properties.reduce((s2,p)=>s2+p.roofs.length,0),0)} icon={Ic.shield} />
+      <KPI label="Total Recovered" value={totalRecovered > 0 ? fmtMoney(totalRecovered) : "$0"} icon={Ic.dollar} color={C.green} sub={totalPending > 0 ? `${fmtMoney(totalPending)} pending` : undefined} />
     </div>
     <div style={{ position: "relative", marginBottom: 20 }}>
       <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.g400 }}>{Ic.search}</span>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search owners, PMs, or properties..." style={{ width: "100%", padding: "12px 12px 12px 42px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box" }} />
     </div>
-    {fil.map(ow => <Card key={ow.id} style={{ marginBottom: 12 }}>
+    {fil.map(ow => {
+      const owRoofIds = getRoofIds(ow.properties);
+      const owRecovered = getRecovered(owRoofIds);
+      const owPending = getPending(owRoofIds);
+      return <Card key={ow.id} style={{ marginBottom: 12 }}>
       <div onClick={() => toggle(ow.id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: `${C.navy}10`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy }}>{Ic.building}</div>
           <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{ow.name}</div>
           <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body }}>{ow.contact} · {ow.properties.length} properties</div></div>
         </div>
-        <span style={{ color: C.g400 }}>{exp[ow.id] ? Ic.chevD : Ic.chevR}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {(owRecovered > 0 || owPending > 0) && <div style={{ textAlign: "right" }}>
+            {owRecovered > 0 && <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: F.head }}>{fmtMoney(owRecovered)}</div>}
+            {owPending > 0 && <div style={{ fontSize: 11, color: "#b45309", fontFamily: F.body }}>{fmtMoney(owPending)} pending</div>}
+          </div>}
+          <span style={{ color: C.g400 }}>{exp[ow.id] ? Ic.chevD : Ic.chevR}</span>
+        </div>
       </div>
       {exp[ow.id] && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.g100}` }}>
-        {ow.properties.map(p => <div key={p.id} style={{ marginBottom: 8, padding: "10px 14px", borderRadius: 10, background: C.g50 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{p.name}</div>
-          <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{p.address}</div>
+        {ow.properties.map(p => {
+          const pRoofIds = p.roofs.map(r => r.id);
+          const pRecovered = getRecovered(pRoofIds);
+          const pPending = getPending(pRoofIds);
+          return <div key={p.id} style={{ marginBottom: 8, padding: "10px 14px", borderRadius: 10, background: C.g50 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{p.name}</div>
+              <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{p.address}</div>
+            </div>
+            {(pRecovered > 0 || pPending > 0) && <div style={{ textAlign: "right" }}>
+              {pRecovered > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head }}>{fmtMoney(pRecovered)}</div>}
+              {pPending > 0 && <div style={{ fontSize: 10, color: "#b45309", fontFamily: F.body }}>{fmtMoney(pPending)} pending</div>}
+            </div>}
+          </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             {p.roofs.map(r => <span key={r.id} onClick={() => onSelectRoof(r.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 8, background: C.white, border: `1px solid ${C.g200}`, fontSize: 11, cursor: "pointer" }}>{compDot(r.warranty.compliance)} {r.section}</span>)}
           </div>
-        </div>)}
+        </div>;
+        })}
       </div>}
-    </Card>)}
+    </Card>;
+    })}
   </div>;
 }
 
@@ -1847,7 +1883,8 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
     const roofClaims = (CLAIMS || []).filter(c => c.roofId === selectedRoof);
     const activeClaims = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending");
     const resolvedClaims = roofClaims.filter(c => c.status === "approved" || c.status === "completed" || c.status === "denied");
-    const totalRecovered = roofClaims.filter(c => c.status === "approved").reduce((s, c) => s + (c.amount || 0), 0);
+    const totalRecovered = roofClaims.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
+    const pendingRecovery = roofClaims.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
 
     return <div>
       <button onClick={() => setSelectedRoof(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
@@ -2004,63 +2041,85 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
         </Card>
       </div>
 
-      {/* ---- Pricing Intelligence Section ---- */}
-      <CollapsibleSection title="Pricing Intelligence" color={C.green} borderColor={C.green} defaultOpen={false}>
-        {pricingLoading ? (
-          <div style={{ fontSize: 13, color: C.g400 }}>Loading pricing data...</div>
-        ) : (() => {
-          const summary = getPricingSummary(pricingStore, w.id);
-          return summary && summary.submissions > 0 ? (
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>BASE FEE</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.baseFee || 0).toLocaleString()}</div>
+      {/* ════════════════════════════════════════════════════════════════
+         RECOVERY TRACKER — Amounts covered by others (warranty, tenant, etc.)
+         Claim → Roof → Property → Owner → Account rollup
+         ════════════════════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 8 }}>
+        <Card style={{ borderLeft: `4px solid ${C.green}`, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: C.green }}>{Ic.dollar}</span>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: F.head }}>Recovery Tracker</div>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: totalRecovered > 0 ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(totalRecovered)}</div>
+          </div>
+          <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 16, lineHeight: 1.5 }}>
+            Total amount covered by other responsible parties for this roof — manufacturer warranty claims, tenant back-billing, and third-party recoveries.
+          </div>
+
+          {/* Breakdown by responsible party */}
+          {roofClaims.length > 0 ? (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: F.head, marginBottom: 10 }}>Recovery Breakdown</div>
+              {roofClaims.filter(c => (c.amount || 0) > 0).map(claim => {
+                const party = claim.status === "approved" ? "Manufacturer Warranty" : claim.status === "in-progress" ? "Pending Review" : claim.status === "denied" ? "Denied" : "Pending";
+                const isApproved = claim.status === "approved" || claim.status === "completed";
+                return (
+                  <div key={claim.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 6, borderRadius: 10, background: isApproved ? C.greenLt : C.g50, border: `1px solid ${isApproved ? C.green + "30" : C.g200}` }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{claim.manufacturer} — {claim.desc}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                        <Badge status={claim.status} />
+                        <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{party}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: isApproved ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
+                  </div>
+                );
+              })}
+              {roofClaims.filter(c => (c.amount || 0) > 0).length === 0 && (
+                <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body, textAlign: "center", padding: "12px 0" }}>No recovery amounts recorded yet.</div>
+              )}
+
+              {/* Totals row */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `2px solid ${C.g200}` }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Total Recovered</div>
+                  <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{roofClaims.filter(c => c.status === "approved").length} approved of {roofClaims.length} total claims</div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: totalRecovered > 0 ? C.green : C.g400, fontFamily: F.head }}>{fmtMoney(totalRecovered)}</div>
               </div>
-              <div>
-                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>PSF RATE</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>${(summary.psfFee || 0).toFixed(2)}/sqft</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>SUBMISSIONS</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{summary.submissions}</div>
-              </div>
+              {pendingRecovery > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#b45309", fontFamily: F.body }}>Pending Recovery</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#b45309", fontFamily: F.head }}>{fmtMoney(pendingRecovery)}</div>
+                </div>
+              )}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: C.g400, fontFamily: F.body }}>No pricing data yet for this warranty.</div>
-          );
-        })()}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.head, marginBottom: 8 }}>Submit Pricing</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input id="baseFeeInput" type="number" placeholder="Base Fee ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 120 }} />
-            <input id="psfInput" type="number" placeholder="PSF ($)" style={{ padding: "6px 10px", border: `1px solid ${C.g200}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, width: 100 }} />
-            <button onClick={() => {
-              const baseEl = document.getElementById("baseFeeInput");
-              const psfEl = document.getElementById("psfInput");
-              const baseFee = parseFloat(baseEl?.value) || 0;
-              const psFee = parseFloat(psfEl?.value) || 0;
-              if (baseFee > 0 || psFee > 0) {
-                doSubmitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
-                if (baseEl) baseEl.value = "";
-                if (psfEl) psfEl.value = "";
-              }
-            }} style={{ padding: "6px 14px", background: C.green, color: C.white, border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: "pointer" }}>
-              Submit
-            </button>
-          </div>
-        </div>
-      </CollapsibleSection>
+            <div style={{ textAlign: "center", padding: "12px 0", fontSize: 13, color: C.g400, fontFamily: F.body }}>
+              No claims or recoveries recorded for this roof yet.
+            </div>
+          )}
+        </Card>
+      </div>
     </div>;
   }
+  const allClaimsArr = CLAIMS || [];
+  const dashRecovered = allClaimsArr.filter(c => c.status === "approved" || c.status === "completed").reduce((s, c) => s + (c.amount || 0), 0);
+  const dashPending = allClaimsArr.filter(c => c.status === "in-progress" || c.status === "review" || c.status === "pending").reduce((s, c) => s + (c.amount || 0), 0);
+
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Warranty Dashboard</h2>
-    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Track coverage, compliance, and inspection schedules</p>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Track coverage, compliance, and recovery across all warranties</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Total Roofs" value={roofs.length} icon={Ic.shield} />
       <KPI label="Active" value={roofs.filter(r=>r.warranty.status==="active").length} icon={Ic.check} />
       <KPI label="At Risk" value={roofs.filter(r=>r.warranty.compliance==="at-risk"||r.warranty.compliance==="expired-inspection").length} icon={Ic.alert} color={C.red} />
+      <KPI label="Total Recovered" value={dashRecovered > 0 ? fmtMoney(dashRecovered) : "$0"} icon={Ic.dollar} color={C.green} sub={dashPending > 0 ? `${fmtMoney(dashPending)} pending` : undefined} />
     </div>
-    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); return <Card key={r.id} onClick={() => setSelectedRoof(r.id)} style={{ marginBottom: 12, cursor: "pointer" }}>
+    {roofs.map(r => { const w=r.warranty; const p=pctUsed(w.start,w.end); const rc=(CLAIMS||[]).filter(c=>c.roofId===r.id); const roofRecovered=rc.filter(c=>c.status==="approved"||c.status==="completed").reduce((s,c)=>s+(c.amount||0),0); const roofPending=rc.filter(c=>c.status==="in-progress"||c.status==="review"||c.status==="pending").reduce((s,c)=>s+(c.amount||0),0); return <Card key={r.id} onClick={() => setSelectedRoof(r.id)} style={{ marginBottom: 12, cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{r.section}</div>
         <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{r.propName} · {r.ownerName}</div></div>
@@ -2073,6 +2132,11 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
       <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: C.g100, overflow: "hidden" }}>
         <div style={{ width: `${p}%`, height: "100%", borderRadius: 3, background: p > 75 ? C.yellow : C.green }} />
       </div>
+      {(roofRecovered > 0 || roofPending > 0) && <div style={{ display: "flex", gap: 12, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.g100}` }}>
+        {roofRecovered > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: C.green, fontFamily: F.head }}>{Ic.dollar} {fmtMoney(roofRecovered)} recovered</div>}
+        {roofPending > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: "#b45309", fontFamily: F.head }}>{Ic.clock} {fmtMoney(roofPending)} pending</div>}
+        <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>{rc.length} claim{rc.length!==1?"s":""}</div>
+      </div>}
     </Card>; })}
   </div>;
 }
@@ -2637,7 +2701,7 @@ export default function App() {
       </div>}
     </div>}
     <div style={{ padding: "24px 32px" }}>
-      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} onAdd={() => setAddOwnerOpen(true)} />}
+      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />}
       {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />}
       {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />}
       {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />}
