@@ -1872,8 +1872,38 @@ function CollapsibleSection({ title, icon, color, borderColor, count, children, 
   );
 }
 
+function ComingSoonToast({ onClose }) {
+  const items = ["Google Earth Leak Pinning", "AI Photo Analysis", "Repair Verification", "Damage Assessment"];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: `linear-gradient(90deg, ${C.navy}, ${C.navyLt})`, marginBottom: 12, overflow: "hidden", position: "relative" }}>
+      <span style={{ color: C.green, flexShrink: 0 }}>{Ic.zap}</span>
+      <div style={{ flex: 1, overflow: "hidden", whiteSpace: "nowrap", maskImage: "linear-gradient(90deg, transparent 0%, black 5%, black 90%, transparent 100%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, black 5%, black 90%, transparent 100%)" }}>
+        <div style={{ display: "inline-block", animation: "comingSoonScroll 18s linear infinite", fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: F.body }}>
+          {items.map((t, i) => (
+            <span key={i} style={{ marginRight: 32 }}>
+              <span style={{ fontWeight: 700, color: C.green }}>Coming Soon</span>
+              <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.3)" }}>|</span>
+              {t}
+            </span>
+          ))}
+          {items.map((t, i) => (
+            <span key={`dup-${i}`} style={{ marginRight: 32 }}>
+              <span style={{ fontWeight: 700, color: C.green }}>Coming Soon</span>
+              <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.3)" }}>|</span>
+              {t}
+            </span>
+          ))}
+        </div>
+      </div>
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", flexShrink: 0, padding: 2 }}>{Ic.x}</button>
+      <style>{`@keyframes comingSoonScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+    </div>
+  );
+}
+
 function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPricingStore, pricingLoading, CLAIMS }) {
   const roofs = allRoofs(OWNERS);
+  const [showComingSoon, setShowComingSoon] = useState(true);
   if (selectedRoof) {
     const r = findRoof(OWNERS, selectedRoof);
     if (!r) return null;
@@ -1920,6 +1950,7 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
          WARRANTY CLAIMS — Linked to this specific roof
          ════════════════════════════════════════════════════════════════ */}
       <div style={{ marginTop: 8, marginBottom: 24 }}>
+        {showComingSoon && <ComingSoonToast onClose={() => setShowComingSoon(false)} />}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${C.blue}, #1d4ed8)`, display: "flex", alignItems: "center", justifyContent: "center", color: C.white }}>{Ic.file}</div>
@@ -1952,30 +1983,6 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
                       <div style={{ textAlign: "right" }}>
                         <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head }}>{fmtMoney(claim.amount || 0)}</div>
                         <Badge status={claim.status} />
-                      </div>
-                    </div>
-
-                    {/* Claim location placeholder — future Google Earth integration */}
-                    <div style={{ background: C.g50, borderRadius: 10, padding: "14px 16px", marginBottom: 10, border: `1px dashed ${C.g200}` }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                        <span style={{ color: C.blue }}>{Ic.target}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.navy, fontFamily: F.head }}>Leak Location</span>
-                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, background: C.blueBg, color: C.blue, fontWeight: 600, fontFamily: F.body }}>Coming Soon</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, lineHeight: 1.5 }}>
-                        Google Earth roof overview with pin-drop leak location, timestamped entries, and photo evidence will be available here.
-                      </div>
-                    </div>
-
-                    {/* AI Analysis placeholder */}
-                    <div style={{ background: `linear-gradient(135deg, ${C.purpleBg}, #ede9fe)`, borderRadius: 10, padding: "14px 16px", marginBottom: 10, border: `1px solid #ddd6fe` }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                        <span style={{ color: C.purple }}>{Ic.zap}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.purple, fontFamily: F.head }}>AI Warranty Analysis</span>
-                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, background: "#ede9fe", color: C.purple, fontWeight: 600, fontFamily: F.body }}>Coming Soon</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: "#6d28d9", fontFamily: F.body, lineHeight: 1.5 }}>
-                        AI photo analysis will evaluate roof damage, assess repair quality, and determine whether the work should be covered under this warranty.
                       </div>
                     </div>
 
@@ -2019,26 +2026,6 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
           </>
         )}
 
-        {/* Feature roadmap preview */}
-        <Card style={{ marginTop: 16, background: `linear-gradient(135deg, ${C.navy} 0%, ${C.navyLt} 100%)`, borderRadius: 14, border: "none" }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: C.white, fontFamily: F.head, marginBottom: 10 }}>Claims Intelligence Roadmap</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { icon: Ic.target, label: "Google Earth Overlay", desc: "Pin-drop leak locations on satellite view" },
-              { icon: Ic.upload, label: "Photo Evidence", desc: "Upload & timestamp damage photos" },
-              { icon: Ic.zap, label: "AI Damage Analysis", desc: "Auto-assess coverage eligibility" },
-              { icon: Ic.check, label: "Repair Tracking", desc: "Mark leaks as repaired with proof" },
-            ].map((item, i) => (
-              <div key={i} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <span style={{ color: C.green }}>{item.icon}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: C.white, fontFamily: F.head }}>{item.label}</span>
-                </div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: F.body }}>{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
       </div>
 
       {/* ════════════════════════════════════════════════════════════════
